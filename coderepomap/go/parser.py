@@ -218,8 +218,60 @@ class GoParser(LanguageParser):
                 self._handle_type_decl(
                     child, content_bytes, rel, module_path, rel_dir, symbols, references,
                 )
+            elif child.type == "method_declaration":
+                self._handle_method_decl(
+                    child, content_bytes, rel, module_path, rel_dir, symbols, references,
+                )
 
         return symbols, references
+
+    def _handle_method_decl(
+        self, node, src_bytes, rel, module_path, rel_dir, symbols, references,
+    ):
+        receiver_node = next((c for c in node.children if c.type == "parameter_list"), None)
+        if receiver_node is None:
+            return
+        recv_decl = next(
+            (c for c in receiver_node.children if c.type == "parameter_declaration"),
+            None,
+        )
+        if recv_decl is None:
+            return
+        recv_kind = "val"
+        recv_type = ""
+        for c in recv_decl.children:
+            if c.type == "pointer_type":
+                recv_kind = "ptr"
+                inner = next(
+                    (x for x in c.children if x.type == "type_identifier"),
+                    None,
+                )
+                if inner is not None:
+                    recv_type = self._text(inner, src_bytes)
+            elif c.type == "type_identifier":
+                recv_type = self._text(c, src_bytes)
+        if not recv_type:
+            return
+
+        name_node = next((c for c in node.children if c.type == "field_identifier"), None)
+        if name_node is None:
+            return
+        name = self._text(name_node, src_bytes)
+        symbols.append(Symbol(
+            id=ident.go_method_id(module_path, rel_dir, recv_type, name),
+            name=name,
+            fqn=ident.go_method_id(module_path, rel_dir, recv_type, name)[len("go:"):],
+            kind="method",
+            file=rel,
+            line=self._line(node),
+            container=ident.go_package_id(module_path, rel_dir),
+            parent=recv_type,
+            lang="go",
+            lang_meta={
+                "exported": self._is_exported(name),
+                "receiver_kind": recv_kind,
+            },
+        ))
 
     def _handle_type_decl(
         self, node, src_bytes, rel, module_path, rel_dir, symbols, references,

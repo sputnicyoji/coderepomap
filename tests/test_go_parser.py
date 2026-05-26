@@ -103,3 +103,25 @@ def test_struct_field_emitted(parsed):
     fields = [s for s in syms if s.kind == "field" and s.parent == "Service"]
     field_names = {s.name for s in fields}
     assert "Name" in field_names
+
+
+def test_method_value_receiver(parsed):
+    syms, _ = parsed["pkg/service/service.go"]
+    describe = next(s for s in syms if s.kind == "method" and s.name == "Describe")
+    assert describe.id == "go:example.com/myapp/pkg/service.Service.Describe"
+    assert describe.parent == "Service"
+    assert describe.lang_meta.get("receiver_kind") == "val"
+
+
+def test_method_pointer_receiver(parsed):
+    syms, _ = parsed["pkg/service/service.go"]
+    run = next(s for s in syms if s.kind == "method" and s.name == "Run" and s.parent == "Service")
+    assert run.id == "go:example.com/myapp/pkg/service.Service.Run"
+    assert run.lang_meta.get("receiver_kind") == "ptr"
+
+
+def test_no_overload_collision_across_types(parsed):
+    syms, _ = parsed["pkg/service/types.go"]
+    fmt = next(s for s in syms if s.kind == "method" and s.name == "Format")
+    assert fmt.id == "go:example.com/myapp/pkg/service.Result.Format"
+    assert fmt.parent == "Result"
