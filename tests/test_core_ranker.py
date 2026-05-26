@@ -205,3 +205,69 @@ def test_ranker_from_csharp_parser_fixture():
     # HUDPanel -> BasePanel resolves in-file, GameManager -> IManager resolves
     # in-file, so we expect 2 edges
     assert ranker.get_stats()["edges"] == 2
+
+
+def test_build_graph_uses_union_of_active_language_node_kinds(monkeypatch):
+    """When a language declares graph_node_kinds, the generator must pass the
+    union into build_graph so non-class entry symbols become PageRank nodes."""
+    from pathlib import Path
+
+    from coderepomap.core.generator import RepoMapGenerator
+    from coderepomap.core.parser_base import Symbol
+    from coderepomap.core import registry, parser_base
+
+    captured = {}
+    from coderepomap.core import graph_builder as gb
+    real_build = gb.build_graph
+
+    def spy(symbols, references, ranker, boost_patterns=(), *, node_kinds=None):
+        captured["node_kinds"] = (
+            None if node_kinds is None else frozenset(node_kinds)
+        )
+        return real_build(
+            symbols, references, ranker, boost_patterns, node_kinds=node_kinds
+        )
+
+    monkeypatch.setattr("coderepomap.core.generator.build_graph", spy)
+
+    # Install a probe Go parser so generator.build() can resolve its declared kinds.
+    class _ProbeGoParser(parser_base.LanguageParser):
+        lang = "go"
+        file_extensions = [".go"]
+        graph_node_kinds = ["package", "class", "interface", "function"]
+
+        def parse_file(self, path, base):
+            return [], []
+
+    # Snapshot + override registry for this test only
+    saved = dict(registry.PARSERS)
+    registry.PARSERS["go"] = _ProbeGoParser
+    try:
+        gen = RepoMapGenerator(
+            config={"lang": "csharp", "source": {"root_path": "."}},
+            project_root=Path("."),
+        )
+        gen.symbols = [
+            Symbol(id="csharp:Foo.Bar", name="Bar", fqn="Foo.Bar",
+                   kind="class", file="a.cs", line=1, lang="csharp"),
+            Symbol(id="go:example.com/x.Service", name="Service",
+                   fqn="example.com/x.Service",
+                   kind="class", file="x.go", line=1, lang="go"),
+            Symbol(id="go:example.com/x", name="x", fqn="example.com/x",
+                   kind="package", file="x.go", line=1, lang="go"),
+            Symbol(id="go:example.com/x.Runner", name="Runner",
+                   fqn="example.com/x.Runner",
+                   kind="interface", file="x.go", line=1, lang="go"),
+        ]
+        gen.references = []
+        gen.build()
+    finally:
+        registry.PARSERS.clear()
+        registry.PARSERS.update(saved)
+
+    nk = captured["node_kinds"]
+    assert nk is not None, "generator must pass an explicit node_kinds when any lang opts in"
+    assert "class" in nk
+    assert "package" in nk
+    assert "interface" in nk
+    assert "function" in nk

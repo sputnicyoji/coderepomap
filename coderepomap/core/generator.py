@@ -238,8 +238,34 @@ class RepoMapGenerator:
                     pass
             boost_patterns = merged
 
+        # Collect graph_node_kinds union across languages actually present in the
+        # parsed symbols. None means "stick with build_graph's class-only default"
+        # (v0.1.0 byte-equivalence for C#-only projects).
+        active_langs: List[str] = []
+        for sym in self.symbols:
+            if sym.lang and sym.lang not in active_langs:
+                active_langs.append(sym.lang)
+
+        node_kinds_union: Optional[List[str]] = None
+        for lang in active_langs:
+            try:
+                parser_cls = type(registry.get_parser(lang))
+            except Exception:
+                continue
+            declared = getattr(parser_cls, "graph_node_kinds", None)
+            if declared is None:
+                continue
+            if node_kinds_union is None:
+                # Always include class so co-language data (e.g. C# nested in
+                # a Go+C# multi-lang project) still appears in the graph.
+                node_kinds_union = ["class"]
+            for k in declared:
+                if k not in node_kinds_union:
+                    node_kinds_union.append(k)
+
         _, unresolved = build_graph(
-            self.symbols, self.references, self.ranker, boost_patterns
+            self.symbols, self.references, self.ranker, boost_patterns,
+            node_kinds=node_kinds_union,
         )
         self.unresolved_references = unresolved
         self.modules = renderer.build_module_stats(self.symbols)
