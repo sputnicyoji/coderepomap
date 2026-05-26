@@ -72,3 +72,30 @@ def test_init_lua_unity_rejected(tmp_path):
     assert 'unity' in combined.lower() and ('csharp' in combined.lower() or 'only' in combined.lower()), (
         f"Expected rejection message in output: {combined!r}"
     )
+
+
+def test_cli_init_lang_go_creates_config(tmp_path, monkeypatch):
+    """`repomap init --lang go` writes config.yaml with `lang: go`."""
+    from coderepomap.core import cli
+    monkeypatch.chdir(tmp_path)
+    args = type("A", (), {"lang": "go", "preset": "generic", "force": False})()
+    rc = cli.cmd_init(args)
+    assert rc == 0
+    cfg = (tmp_path / ".repomap" / "config.yaml").read_text(encoding="utf-8")
+    assert "lang: go" in cfg
+
+
+def test_cli_init_lang_go_with_unity_preset_rejected(tmp_path, monkeypatch):
+    """Unity preset is meaningless for Go; CLI must reject it."""
+    from coderepomap.core import cli
+    monkeypatch.chdir(tmp_path)
+    args = type("A", (), {"lang": "go", "preset": "unity", "force": False})()
+    rc = cli.cmd_init(args)
+    assert rc == 1
+
+
+def test_pyproject_declares_go_extras():
+    import pathlib
+    text = pathlib.Path("pyproject.toml").read_text(encoding="utf-8")
+    assert "tree-sitter-go" in text
+    assert "coderepomap.go" in text

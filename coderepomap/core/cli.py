@@ -61,8 +61,11 @@ def cmd_init(args):
     preset = args.preset or 'generic'
 
     # Validate lang+preset combination
-    if lang == 'lua' and preset == 'unity':
-        print("Error: unity preset is only valid for --lang csharp", file=sys.stderr)
+    if preset == 'unity' and lang != 'csharp':
+        print(
+            f"Error: unity preset is only valid for --lang csharp (got {lang})",
+            file=sys.stderr,
+        )
         return 1
 
     # Resolve template path based on lang + preset routing
@@ -134,6 +137,11 @@ def _resolve_init_template(lang: str, preset: str) -> Optional[Path]:
         lua_specific = get_lang_templates_dir('lua') / 'config.lua.yaml'
         if lua_specific.exists():
             return lua_specific
+        return get_templates_dir() / 'config.generic.yaml'
+    elif lang == 'go':
+        go_specific = get_lang_templates_dir('go') / 'config.go.yaml'
+        if go_specific.exists():
+            return go_specific
         return get_templates_dir() / 'config.generic.yaml'
     # Unknown lang: fall through to default config generation
     return None
@@ -566,7 +574,7 @@ Examples:
     init_parser = subparsers.add_parser('init', help='Initialize configuration')
     init_parser.add_argument(
         '--lang', '-l',
-        choices=['csharp', 'lua'],
+        choices=['csharp', 'lua', 'go'],
         default='csharp',
         help='Target language (default: csharp)'
     )
