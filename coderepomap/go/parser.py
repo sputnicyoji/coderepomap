@@ -214,8 +214,96 @@ class GoParser(LanguageParser):
                 self._handle_function_decl(
                     child, content_bytes, rel, module_path, rel_dir, symbols, references,
                 )
+            elif child.type == "type_declaration":
+                self._handle_type_decl(
+                    child, content_bytes, rel, module_path, rel_dir, symbols, references,
+                )
 
         return symbols, references
+
+    def _handle_type_decl(
+        self, node, src_bytes, rel, module_path, rel_dir, symbols, references,
+    ):
+        for spec in node.children:
+            if spec.type != "type_spec":
+                continue
+            name_node = next((c for c in spec.children if c.type == "type_identifier"), None)
+            if name_node is None:
+                continue
+            name = self._text(name_node, src_bytes)
+            line = self._line(spec)
+
+            type_params: List[str] = []
+            for c in spec.children:
+                if c.type == "type_parameter_list":
+                    for tp in c.children:
+                        if tp.type == "type_parameter_declaration":
+                            ident_node = next((x for x in tp.children if x.type == "identifier"), None)
+                            if ident_node is not None:
+                                type_params.append(self._text(ident_node, src_bytes))
+
+            # The first type_identifier child IS the type name (name_node above).
+            # Skip it when scanning for the inner type expression.
+            inner = None
+            for c in spec.children:
+                if c is name_node:
+                    continue
+                if c.type in ("struct_type", "interface_type"):
+                    inner = c
+                    break
+                if c.type in ("type_identifier", "pointer_type", "slice_type", "map_type",
+                              "array_type", "function_type", "channel_type", "qualified_type"):
+                    inner = c
+                    break
+
+            kind = "interface" if (inner is not None and inner.type == "interface_type") else "class"
+
+            symbols.append(Symbol(
+                id=ident.go_type_id(module_path, rel_dir, name),
+                name=name,
+                fqn=ident.go_type_id(module_path, rel_dir, name)[len("go:"):],
+                kind=kind,
+                file=rel,
+                line=line,
+                container=ident.go_package_id(module_path, rel_dir),
+                lang="go",
+                lang_meta={
+                    "exported": self._is_exported(name),
+                    "generic_params": type_params,
+                },
+            ))
+
+            if inner is not None and inner.type == "struct_type":
+                self._emit_struct_fields(
+                    inner, src_bytes, rel, module_path, rel_dir, name, symbols, references,
+                )
+
+    def _emit_struct_fields(
+        self, struct_node, src_bytes, rel, module_path, rel_dir, type_name,
+        symbols, references,
+    ):
+        body = next((c for c in struct_node.children if c.type == "field_declaration_list"), None)
+        if body is None:
+            return
+        for decl in body.children:
+            if decl.type != "field_declaration":
+                continue
+            names = [c for c in decl.children if c.type == "field_identifier"]
+            if names:
+                for n in names:
+                    fname = self._text(n, src_bytes)
+                    symbols.append(Symbol(
+                        id=ident.go_member_id(module_path, rel_dir, type_name, fname),
+                        name=fname,
+                        fqn=ident.go_member_id(module_path, rel_dir, type_name, fname)[len("go:"):],
+                        kind="field",
+                        file=rel,
+                        line=self._line(n),
+                        container=ident.go_package_id(module_path, rel_dir),
+                        parent=type_name,
+                        lang="go",
+                        lang_meta={"exported": self._is_exported(fname)},
+                    ))
 
     def _handle_function_decl(
         self, node, src_bytes, rel, module_path, rel_dir, symbols, references,

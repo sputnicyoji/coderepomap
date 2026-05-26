@@ -82,3 +82,24 @@ def test_function_exported_flag(parsed):
     syms, _ = parsed["pkg/service/service.go"]
     new_service = next(s for s in syms if s.id == "go:example.com/myapp/pkg/service.NewService")
     assert new_service.lang_meta.get("exported") is True
+
+
+def test_struct_symbol_is_class_kind(parsed):
+    syms, _ = parsed["pkg/service/service.go"]
+    svc = next(s for s in syms if s.name == "Service")
+    assert svc.kind == "class"
+    assert svc.id == "go:example.com/myapp/pkg/service.Service"
+
+
+def test_interface_symbol_is_interface_kind(parsed):
+    syms, _ = parsed["pkg/service/service.go"]
+    runner = next(s for s in syms if s.name == "Runner")
+    assert runner.kind == "interface"
+    assert runner.id == "go:example.com/myapp/pkg/service.Runner"
+
+
+def test_struct_field_emitted(parsed):
+    syms, _ = parsed["pkg/service/service.go"]
+    fields = [s for s in syms if s.kind == "field" and s.parent == "Service"]
+    field_names = {s.name for s in fields}
+    assert "Name" in field_names
