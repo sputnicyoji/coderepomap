@@ -368,3 +368,88 @@ def test_fix_c19_deep_expression_does_not_recursion_error(tmp_path):
     syms, _ = p.parse_file(sub / "deep.go", src_root)
     # And the function symbol must still be emitted.
     assert any(s.kind == "function" and s.name == "Big" for s in syms)
+
+
+def test_fix_c17_go_mod_without_module_line_falls_through_to_parent(tmp_path):
+    """C17: a nested go.mod lacking a parseable `module` directive must not
+    short-circuit the ancestor walk — the parent's valid go.mod should win.
+
+    Reproducer: base_path = the dir containing the stray go.mod. The walk must
+    fall through to the parent dir's valid go.mod.
+    """
+    # Parent has a valid go.mod
+    (tmp_path / "go.mod").write_text("module example.com/root\n\ngo 1.21\n",
+                                     encoding="utf-8")
+    nested = tmp_path / "nested"
+    nested.mkdir()
+    (nested / "go.mod").write_text("// stub during migration\n\ngo 1.21\n",
+                                   encoding="utf-8")
+    sub = nested / "pkg"
+    sub.mkdir()
+    (sub / "x.go").write_text("package pkg\nfunc Foo() {}\n", encoding="utf-8")
+    p = GoParser()
+    syms, _ = p.parse_file(sub / "x.go", nested)
+    # The valid parent go.mod must be discovered despite the stray nested one.
+    assert any("example.com/root" in s.id for s in syms), \
+        f"Parent module path lost to stray go.mod; got ids: {[s.id for s in syms]}"
+
+
+def test_fix_c25_init_parser_failure_does_not_latch_initialized(tmp_path):
+    """C25: when tree-sitter init fails (ImportError / Exception), _initialized
+    must NOT be set to True — subsequent calls should be able to retry. This
+    matches LegacyCSharpParser's policy and avoids silent regex degradation
+    for the entire run when a transient init issue occurs."""
+    p = GoParser()
+    # Simulate init failure by monkeypatching the import target.
+    # The easiest reliable simulation: pre-set _parser=None and _initialized=False,
+    # invoke a synthetic failure path manually via a subclass override.
+    class FailingParser(GoParser):
+        def _init_parser(self) -> bool:
+            # Mimic the (corrected) failure path: do NOT latch _initialized.
+            self._parser = None
+            return False
+
+    fp = FailingParser()
+    assert fp._init_parser() is False
+    # Second call: still should be allowed to retry (not short-circuited).
+    # The CONTRACT is: if _initialized is False, the next caller may retry.
+    # Verify the GoParser source enforces this by inspecting the lines.
+    import inspect
+    src = inspect.getsource(GoParser._init_parser)
+    # The corrected source must NOT set _initialized=True inside the except
+    # branches. Equivalent semantic check via behavior:
+    # repeated calls after failure should not latch a permanent regex state.
+    p2 = GoParser()
+    # Force first init to "fail" by clobbering tree_sitter_go to raise on import:
+    import builtins
+    real_import = builtins.__import__
+    calls = {"n": 0}
+    def fail_first(name, *args, **kwargs):
+        if name == "tree_sitter_go" and calls["n"] == 0:
+            calls["n"] += 1
+            raise ImportError("simulated transient")
+        return real_import(name, *args, **kwargs)
+    builtins.__import__ = fail_first
+    try:
+        first = p2._init_parser()
+        assert first is False
+        # _initialized must allow a second attempt (i.e. either stay False, or
+        # be True only when init succeeded). After a FAILED init, _parser is
+        # None and a retry policy is required.
+        second = p2._init_parser()
+        # On retry, the real import succeeds; expect True now.
+        assert second is True, "Failed init must not permanently latch regex mode"
+    finally:
+        builtins.__import__ = real_import
+
+
+def test_fix_c24_import_tables_removed_or_consumed():
+    """C24: _import_tables was dead code (written, never read). Verify it's
+    either gone entirely or has a non-trivial reader site."""
+    import inspect
+    src = inspect.getsource(GoParser)
+    if "_import_tables" not in src:
+        return  # removed — clean
+    raise AssertionError(
+        "_import_tables still present in GoParser; expected removal (no consumer)"
+    )

@@ -76,7 +76,6 @@ class GoParser(LanguageParser):
         self._initialized = False
         self._module_path_cache: Dict[Path, str] = {}
         self._parsed_packages: set = set()
-        self._import_tables: Dict[str, List[_ImportEntry]] = {}
 
     # --- TS init ---------------------------------------------------------------
 
@@ -92,13 +91,19 @@ class GoParser(LanguageParser):
             self._initialized = True
             return True
         except ImportError as e:
+            # Do NOT latch _initialized on failure: a transient ImportError
+            # (partially-loaded wheel, ABI mismatch resolved on next attempt,
+            # etc.) shouldn't permanently downgrade the whole run to regex
+            # mode. Matches LegacyCSharpParser's policy. Trade-off: the
+            # warning may print once per file when the extra is missing —
+            # acceptable noise vs. silently losing all in-body refs.
             print(f"Warning: tree-sitter-go not available: {e}", file=sys.stderr)
             print("Falling back to regex-based Go parsing", file=sys.stderr)
-            self._initialized = True
+            self._parser = None
             return False
         except Exception as e:
             print(f"Warning: tree-sitter-go init failed: {e}", file=sys.stderr)
-            self._initialized = True
+            self._parser = None
             return False
 
     # --- go.mod resolution -------------------------------------------------
@@ -106,7 +111,13 @@ class GoParser(LanguageParser):
     _MOD_RE = re.compile(r"^module\s+([^\s]+)", re.MULTILINE)
 
     def _resolve_module_path(self, base_path: Path) -> str:
-        """Find `go.mod` at base_path (and ancestors up to filesystem root)."""
+        """Find `go.mod` at base_path (and ancestors up to filesystem root).
+
+        A go.mod that lacks a parseable `module` directive (stub, in-flight
+        migration, commented-out line) does NOT short-circuit the walk —
+        traversal continues to ancestors until either a valid module
+        declaration is found or the filesystem root is reached.
+        """
         cached = self._module_path_cache.get(base_path)
         if cached is not None:
             return cached
@@ -114,15 +125,18 @@ class GoParser(LanguageParser):
         path = ""
         for candidate in [cur, *cur.parents]:
             mod = candidate / "go.mod"
-            if mod.is_file():
-                try:
-                    text = mod.read_text(encoding="utf-8", errors="replace")
-                except OSError:
-                    text = ""
-                m = self._MOD_RE.search(text)
-                if m:
-                    path = m.group(1).strip()
+            if not mod.is_file():
+                continue
+            try:
+                text = mod.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                text = ""
+            m = self._MOD_RE.search(text)
+            if m:
+                path = m.group(1).strip()
                 break
+            # No parseable module directive — fall through to the parent
+            # rather than caching an empty string from a stray go.mod.
         self._module_path_cache[base_path] = path
         return path
 
@@ -236,9 +250,6 @@ class GoParser(LanguageParser):
                     child, content_bytes, rel, module_path, rel_dir, imports,
                     symbols, references,
                 )
-
-        # Persist for Task 14's call-expression walker.
-        self._import_tables[rel] = imports
 
         return symbols, references
 
