@@ -287,3 +287,46 @@ def test_finding_15_limit_none_returns_all():
     r.add_symbol("csharp:B", file="b.cs", kind="class", label="B")
     out = r.get_ranked_symbols(limit=None)
     assert len(out) == 2
+
+
+def test_build_module_stats_csharp_default_remains_class_only():
+    """Byte-compat: a CSharp-only Symbol list still produces class_count, no symbol_count."""
+    from coderepomap.core.parser_base import Symbol
+    from coderepomap.core.renderer import build_module_stats
+
+    syms = [
+        Symbol(id="csharp:A.X", name="X", fqn="A.X", kind="class",
+               file="A/X.cs", line=1, lang="csharp"),
+        Symbol(id="csharp:A.X.M()", name="M", fqn="A.X.M", kind="method",
+               file="A/X.cs", line=2, lang="csharp"),
+    ]
+    stats = build_module_stats(syms)
+    assert stats["A"]["class_count"] == 1
+    assert "X" in stats["A"]["classes"]
+
+
+def test_build_module_stats_go_counts_packages_interfaces_functions():
+    """With Go symbols present, module_stats must expose a symbol_count covering
+    the language's declared graph_node_kinds, and entries list must include
+    non-class entry symbols so the renderer can show them."""
+    from coderepomap.core.parser_base import Symbol
+    from coderepomap.core.renderer import build_module_stats
+
+    syms = [
+        Symbol(id="go:m/pkg/service", name="service", fqn="m/pkg/service",
+               kind="package", file="pkg/service/service.go", line=1, lang="go"),
+        Symbol(id="go:m/pkg/service.Service", name="Service",
+               fqn="m/pkg/service.Service",
+               kind="class", file="pkg/service/service.go", line=5, lang="go"),
+        Symbol(id="go:m/pkg/service.Runner", name="Runner",
+               fqn="m/pkg/service.Runner",
+               kind="interface", file="pkg/service/service.go", line=3, lang="go"),
+        Symbol(id="go:m/pkg/service.NewService", name="NewService",
+               fqn="m/pkg/service.NewService",
+               kind="function", file="pkg/service/service.go", line=10, lang="go"),
+    ]
+    stats = build_module_stats(syms)
+    info = stats["pkg"]
+    assert info["class_count"] == 1
+    assert info["symbol_count"] == 4
+    assert {"Service", "Runner", "NewService"} <= set(info["entries"])

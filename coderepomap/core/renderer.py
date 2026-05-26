@@ -46,22 +46,43 @@ def _module_from_file(file_path: str) -> str:
     return parts[0] if parts else "Unknown"
 
 
-def build_module_stats(symbols: List[Symbol]) -> Dict[str, dict]:
-    """Recreate the v0.1.0 module stats dict from new-contract Symbols.
+# Symbol kinds that count as "entry" graph nodes for renderer purposes.
+# This is renderer-internal, independent of build_graph's runtime node_kinds:
+# the renderer always shows packages / interfaces / functions when present in
+# the symbol set, while C#-only Symbol lists still produce the legacy
+# class_count for byte-compatible v0.1.0 output.
+_RENDERER_ENTRY_KINDS = frozenset({"class", "interface", "package", "function"})
 
-    Only counts `class` symbols (matches v0.1.0). `parent_class` access is
-    replaced by `parent`; `name` unchanged.
+
+def build_module_stats(symbols: List[Symbol]) -> Dict[str, dict]:
+    """Module-level statistics for the renderer.
+
+    Each module dict carries:
+      - `class_count` (legacy, v0.1.0 byte-compat): number of `kind=="class"` symbols
+      - `classes`     (legacy): names of those class symbols
+      - `symbol_count` (new): total entry symbols across the widened kind set
+      - `entries`     (new): names of those entry symbols (in stable order)
+      - `file_count`  (legacy): number of distinct files in this module
     """
     modules: Dict[str, dict] = {}
     for sym in symbols:
-        if sym.kind != "class":
-            continue
         module = _module_from_file(sym.file)
         if module not in modules:
-            modules[module] = {"class_count": 0, "classes": [], "files": set()}
-        modules[module]["class_count"] += 1
-        modules[module]["classes"].append(sym.name)
-        modules[module]["files"].add(sym.file)
+            modules[module] = {
+                "class_count": 0,
+                "classes": [],
+                "symbol_count": 0,
+                "entries": [],
+                "files": set(),
+            }
+        info = modules[module]
+        info["files"].add(sym.file)
+        if sym.kind == "class":
+            info["class_count"] += 1
+            info["classes"].append(sym.name)
+        if sym.kind in _RENDERER_ENTRY_KINDS:
+            info["symbol_count"] += 1
+            info["entries"].append(sym.name)
     for m in modules.values():
         m["file_count"] = len(m["files"])
         del m["files"]
