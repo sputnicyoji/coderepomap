@@ -199,3 +199,46 @@ def test_generic_type_id_has_no_brackets(parsed):
     box = next(s for s in syms if s.name == "GenericBox")
     assert "[" not in box.id
     assert "T" in box.lang_meta.get("generic_params", [])
+
+
+def test_call_cross_package_via_alias(parsed):
+    """In main.go: `svc.NewService()` -> Reference to_id pointing at service.NewService."""
+    _, refs = parsed["main.go"]
+    call = next(
+        r for r in refs
+        if r.kind == "call" and r.to_id == "go:example.com/myapp/pkg/service.NewService"
+    )
+    assert call.to_external == "svc.NewService"
+
+
+def test_call_cross_package_default_selector(parsed):
+    """In main.go: `handler.NewHandler()` resolves via default-named import."""
+    _, refs = parsed["main.go"]
+    assert any(
+        r.kind == "call" and r.to_id == "go:example.com/myapp/pkg/handler.NewHandler"
+        for r in refs
+    )
+
+
+def test_call_same_package_top_level(parsed):
+    """Service.go internals produce at least some Go references."""
+    _, refs = parsed["pkg/service/service.go"]
+    assert any(r.lang == "go" for r in refs)
+
+
+def test_call_v2_resolves_through_default_selector(tmp_path):
+    """v2-suffix import: bar.Use() resolves to go:github.com/foo/bar/v2.Use"""
+    src_root = tmp_path
+    (src_root / "go.mod").write_text("module example.com/x\n", encoding="utf-8")
+    sub = src_root / "consumer"
+    sub.mkdir()
+    (sub / "main.go").write_text(
+        'package consumer\n'
+        'import "github.com/foo/bar/v2"\n'
+        'func F() { bar.Use() }\n',
+        encoding="utf-8",
+    )
+    p = GoParser()
+    _, refs = p.parse_file(sub / "main.go", src_root)
+    call = next(r for r in refs if r.kind == "call" and r.to_external == "bar.Use")
+    assert call.to_id == "go:github.com/foo/bar/v2.Use"

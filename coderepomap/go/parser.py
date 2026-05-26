@@ -222,7 +222,8 @@ class GoParser(LanguageParser):
         for child in root.children:
             if child.type == "function_declaration":
                 self._handle_function_decl(
-                    child, content_bytes, rel, module_path, rel_dir, symbols, references,
+                    child, content_bytes, rel, module_path, rel_dir, imports,
+                    symbols, references,
                 )
             elif child.type == "type_declaration":
                 self._handle_type_decl(
@@ -231,7 +232,8 @@ class GoParser(LanguageParser):
                 )
             elif child.type == "method_declaration":
                 self._handle_method_decl(
-                    child, content_bytes, rel, module_path, rel_dir, symbols, references,
+                    child, content_bytes, rel, module_path, rel_dir, imports,
+                    symbols, references,
                 )
 
         # Persist for Task 14's call-expression walker.
@@ -315,7 +317,7 @@ class GoParser(LanguageParser):
         return last
 
     def _handle_method_decl(
-        self, node, src_bytes, rel, module_path, rel_dir, symbols, references,
+        self, node, src_bytes, rel, module_path, rel_dir, imports, symbols, references,
     ):
         receiver_node = next((c for c in node.children if c.type == "parameter_list"), None)
         if receiver_node is None:
@@ -361,6 +363,13 @@ class GoParser(LanguageParser):
                 "receiver_kind": recv_kind,
             },
         ))
+
+        body = next((c for c in node.children if c.type == "block"), None)
+        if body is not None:
+            self._walk_body(
+                body, src_bytes, rel, module_path, rel_dir,
+                imports=imports, symbols=symbols, references=references,
+            )
 
     def _handle_type_decl(
         self, node, src_bytes, rel, module_path, rel_dir, imports, symbols, references,
@@ -483,7 +492,7 @@ class GoParser(LanguageParser):
                     ))
 
     def _handle_function_decl(
-        self, node, src_bytes, rel, module_path, rel_dir, symbols, references,
+        self, node, src_bytes, rel, module_path, rel_dir, imports, symbols, references,
     ):
         name_node = None
         for c in node.children:
@@ -519,6 +528,13 @@ class GoParser(LanguageParser):
             },
         ))
 
+        body = next((c for c in node.children if c.type == "block"), None)
+        if body is not None:
+            self._walk_body(
+                body, src_bytes, rel, module_path, rel_dir,
+                imports=imports, symbols=symbols, references=references,
+            )
+
     # --- regex fallback (filled in by Task 15) ------------------------------
 
     def _parse_with_regex(
@@ -542,6 +558,146 @@ class GoParser(LanguageParser):
     @staticmethod
     def _is_exported(name: str) -> bool:
         return bool(name) and name[0].isupper()
+
+    # --- body walker --------------------------------------------------------
+
+    _GO_BUILTINS = frozenset({
+        "append", "cap", "close", "complex", "copy", "delete", "imag", "len",
+        "make", "new", "panic", "print", "println", "real", "recover",
+        "true", "false", "nil", "iota",
+        "any", "bool", "byte", "comparable", "complex64", "complex128",
+        "error", "float32", "float64", "int", "int8", "int16", "int32", "int64",
+        "rune", "string", "uint", "uint8", "uint16", "uint32", "uint64", "uintptr",
+    })
+
+    def _walk_body(
+        self, node, src_bytes, rel, module_path, rel_dir, *,
+        imports, symbols, references,
+    ):
+        locals_set: set = set()
+        self._walk_node(
+            node, src_bytes, rel, module_path, rel_dir,
+            imports=imports, locals_set=locals_set,
+            symbols=symbols, references=references,
+        )
+
+    def _walk_node(
+        self, node, src_bytes, rel, module_path, rel_dir, *,
+        imports, locals_set, symbols, references,
+    ):
+        t = node.type
+        if t == "call_expression":
+            self._handle_call_expr(
+                node, src_bytes, rel, module_path, rel_dir,
+                imports, locals_set, references,
+            )
+        elif t == "short_var_declaration":
+            for c in node.children:
+                if c.type == "expression_list":
+                    for ec in c.children:
+                        if ec.type == "identifier":
+                            locals_set.add(self._text(ec, src_bytes))
+                    break
+        elif t == "composite_literal":
+            self._handle_composite_lit(
+                node, src_bytes, rel, module_path, rel_dir,
+                imports, locals_set, references,
+            )
+        for c in node.children:
+            self._walk_node(
+                c, src_bytes, rel, module_path, rel_dir,
+                imports=imports, locals_set=locals_set,
+                symbols=symbols, references=references,
+            )
+
+    def _handle_call_expr(
+        self, node, src_bytes, rel, module_path, rel_dir,
+        imports, locals_set, references,
+    ):
+        callee = node.children[0] if node.children else None
+        if callee is None:
+            return
+        from_id = ident.go_package_id(module_path, rel_dir)
+        line = self._line(node)
+
+        if callee.type == "selector_expression":
+            operand = next(
+                (c for c in callee.children if c.type in ("identifier", "selector_expression")),
+                None,
+            )
+            field = next((c for c in callee.children if c.type == "field_identifier"), None)
+            if operand is None or field is None:
+                return
+            if operand.type != "identifier":
+                # Nested selector `a.b.C()` — out of Phase 1 scope.
+                return
+            sel = self._text(operand, src_bytes)
+            name = self._text(field, src_bytes)
+            if sel in locals_set:
+                return  # method call on a local var
+            match = next((e for e in imports if e.selector == sel), None)
+            if match is None:
+                return  # unknown root — not an imported pkg
+            references.append(Reference(
+                from_id=from_id,
+                to_id=f"{match.package_id}.{name}",
+                to_external=f"{sel}.{name}",
+                file=rel,
+                line=line,
+                kind="call",
+                lang="go",
+                resolved=False,
+            ))
+        elif callee.type == "identifier":
+            name = self._text(callee, src_bytes)
+            if name in self._GO_BUILTINS or name in locals_set:
+                return
+            references.append(Reference(
+                from_id=from_id,
+                to_id=ident.go_function_id(module_path, rel_dir, name),
+                to_external=name,
+                file=rel,
+                line=line,
+                kind="call",
+                lang="go",
+                resolved=False,
+            ))
+
+    def _handle_composite_lit(
+        self, node, src_bytes, rel, module_path, rel_dir,
+        imports, locals_set, references,
+    ):
+        type_node = node.children[0] if node.children else None
+        if type_node is None:
+            return
+        from_id = ident.go_package_id(module_path, rel_dir)
+        line = self._line(node)
+        if type_node.type == "qualified_type":
+            pkg_node = next((c for c in type_node.children if c.type == "package_identifier"), None)
+            tname_node = next((c for c in type_node.children if c.type == "type_identifier"), None)
+            if pkg_node is None or tname_node is None:
+                return
+            sel = self._text(pkg_node, src_bytes)
+            tname = self._text(tname_node, src_bytes)
+            match = next((e for e in imports if e.selector == sel), None)
+            if match is None:
+                return
+            references.append(Reference(
+                from_id=from_id,
+                to_id=f"{match.package_id}.{tname}",
+                to_external=f"{sel}.{tname}",
+                file=rel, line=line, kind="uses", lang="go", resolved=False,
+            ))
+        elif type_node.type == "type_identifier":
+            tname = self._text(type_node, src_bytes)
+            if tname in self._GO_BUILTINS or tname in locals_set:
+                return
+            references.append(Reference(
+                from_id=from_id,
+                to_id=ident.go_type_id(module_path, rel_dir, tname),
+                to_external=tname,
+                file=rel, line=line, kind="uses", lang="go", resolved=False,
+            ))
 
 
 __all__ = ["GoParser"]
