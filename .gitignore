@@ -23,6 +23,7 @@ wheels/
 # Virtual environments
 .env
 .venv
+.venv_mission/
 env/
 venv/
 ENV/
@@ -44,3 +45,7 @@ htmlcov/
 _planning/
 .repomap/
 tmpclaude-*
+
+# Mission baseline ephemera (snapshot + golden are committed, output is regenerated)
+tests/baseline/output/
+tests/probe_parser.py

@@ -1,8 +1,9 @@
 """
-Entry point for running as module: python -m csharp_repomap
+Entry point for running as module: python -m coderepomap
 """
 
-from .cli import main
+import sys
+from .core.cli import main
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

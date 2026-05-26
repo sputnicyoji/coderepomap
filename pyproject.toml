@@ -3,16 +3,16 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "csharp-repomap"
-version = "0.1.0"
-description = "Generate layered code maps for C# projects, optimized for AI assistants like Claude"
+name = "coderepomap"
+version = "0.2.0"
+description = "Generate layered multi-language code maps optimized for AI assistants like Claude"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.8"
 authors = [
     {name = "Yoji", email = "yoji@example.com"}
 ]
-keywords = ["csharp", "unity", "code-analysis", "repomap", "claude", "ai"]
+keywords = ["csharp", "lua", "unity", "code-analysis", "repomap", "claude", "ai", "multi-language"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -23,41 +23,53 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Code Generators",
     "Topic :: Software Development :: Documentation",
 ]
 
 dependencies = [
-    "tree-sitter>=0.20.0",
-    "tree-sitter-c-sharp>=0.20.0",
     "networkx>=2.6",
     "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
-dev = [
-    "pytest>=7.0",
-    "pytest-cov",
+csharp = [
+    "tree-sitter>=0.21",
+    "tree-sitter-c-sharp>=0.20",
+]
+lua = [
+    "tree-sitter>=0.21",
+    "tree-sitter-lua>=0.4",
 ]
 tiktoken = [
     "tiktoken>=0.5.0",
 ]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov",
+]
+all = [
+    "coderepomap[csharp,lua,tiktoken]",
+]
 
 [project.scripts]
-repomap = "csharp_repomap.cli:main"
+repomap = "coderepomap.core.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/user/csharp-repomap"
-Repository = "https://github.com/user/csharp-repomap"
-Issues = "https://github.com/user/csharp-repomap/issues"
+Homepage = "https://github.com/user/coderepomap"
+Repository = "https://github.com/user/coderepomap"
+Issues = "https://github.com/user/coderepomap/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["csharp_repomap*"]
+include = ["coderepomap*"]
 
 [tool.setuptools.package-data]
-csharp_repomap = [
+coderepomap = [
     "templates/*.yaml",
     "templates/hooks/*",
     "resources/*.ps1",
 ]
+"coderepomap.csharp" = ["templates/*.yaml"]
+"coderepomap.lua" = ["templates/*.yaml"]
