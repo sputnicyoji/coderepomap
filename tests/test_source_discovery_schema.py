@@ -171,3 +171,43 @@ def test_load_config_accepts_correct_multi_lang(tmp_path: Path):
     # Defense in depth: default-carried `source:` must be stripped.
     assert "source" not in result
     assert discover(result, tmp_path) == []
+
+
+def test_discover_single_lang_go(tmp_path):
+    """`lang: go` + `source.root_path` discovers .go files using Go default_excludes."""
+    from coderepomap.core import source_discovery
+    (tmp_path / "go.mod").write_text("module example.com/x\n", encoding="utf-8")
+    (tmp_path / "main.go").write_text("package main\nfunc main(){}\n", encoding="utf-8")
+    (tmp_path / "main_test.go").write_text("package main\n", encoding="utf-8")
+    vendor = tmp_path / "vendor" / "thirdparty"
+    vendor.mkdir(parents=True)
+    (vendor / "x.go").write_text("package thirdparty\n", encoding="utf-8")
+    cfg = {"lang": "go", "source": {"root_path": str(tmp_path)}}
+    files = source_discovery.discover(cfg, tmp_path)
+    rels = sorted(p.path.relative_to(p.root).as_posix() for p in files)
+    assert "main.go" in rels
+    assert "main_test.go" not in rels
+    assert all("vendor/" not in r for r in rels)
+
+
+def test_discover_multi_lang_csharp_lua_go(tmp_path):
+    """`langs: [csharp, lua, go]` discovers all three roots."""
+    from coderepomap.core import source_discovery
+    cs_root = tmp_path / "cs_src"
+    lua_root = tmp_path / "lua_src"
+    go_root = tmp_path / "go_src"
+    cs_root.mkdir(); lua_root.mkdir(); go_root.mkdir()
+    (cs_root / "A.cs").write_text("class A {}", encoding="utf-8")
+    (lua_root / "m.lua").write_text("return {}", encoding="utf-8")
+    (go_root / "main.go").write_text("package main\n", encoding="utf-8")
+    cfg = {
+        "langs": ["csharp", "lua", "go"],
+        "sources": {
+            "csharp": {"root_path": str(cs_root)},
+            "lua":    {"root_path": str(lua_root)},
+            "go":     {"root_path": str(go_root)},
+        },
+    }
+    files = source_discovery.discover(cfg, tmp_path)
+    langs = {sf.lang for sf in files}
+    assert langs == {"csharp", "lua", "go"}
