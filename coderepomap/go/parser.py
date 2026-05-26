@@ -189,6 +189,8 @@ class GoParser(LanguageParser):
                         break
                 break
 
+        imports: List[_ImportEntry] = []
+
         if package_id not in self._parsed_packages:
             self._parsed_packages.add(package_id)
             display_name = package_name or (
@@ -209,6 +211,14 @@ class GoParser(LanguageParser):
                 },
             ))
 
+        # Imports first so subsequent type / call walks can resolve cross-pkg
+        # references through the alias table.
+        for child in root.children:
+            if child.type == "import_declaration":
+                self._handle_imports(
+                    child, content_bytes, rel, module_path, rel_dir, imports, references,
+                )
+
         for child in root.children:
             if child.type == "function_declaration":
                 self._handle_function_decl(
@@ -216,14 +226,93 @@ class GoParser(LanguageParser):
                 )
             elif child.type == "type_declaration":
                 self._handle_type_decl(
-                    child, content_bytes, rel, module_path, rel_dir, symbols, references,
+                    child, content_bytes, rel, module_path, rel_dir, imports,
+                    symbols, references,
                 )
             elif child.type == "method_declaration":
                 self._handle_method_decl(
                     child, content_bytes, rel, module_path, rel_dir, symbols, references,
                 )
 
+        # Persist for Task 14's call-expression walker.
+        self._import_tables[rel] = imports
+
         return symbols, references
+
+    def _handle_imports(
+        self, node, src_bytes, rel, module_path, rel_dir, imports, references,
+    ):
+        specs: List = []
+        for c in node.children:
+            if c.type == "import_spec":
+                specs.append(c)
+            elif c.type == "import_spec_list":
+                for ic in c.children:
+                    if ic.type == "import_spec":
+                        specs.append(ic)
+        from_id = ident.go_package_id(module_path, rel_dir)
+        for spec in specs:
+            path_node = next(
+                (c for c in spec.children if c.type in ("interpreted_string_literal", "raw_string_literal")),
+                None,
+            )
+            if path_node is None:
+                continue
+            raw = self._text(path_node, src_bytes)
+            path = raw.strip('"').strip("`")
+            selector_node = next(
+                (c for c in spec.children if c.type in ("package_identifier", "blank_identifier", ".")),
+                None,
+            )
+            is_blank = False
+            is_dot = False
+            confidence = "high"
+            if selector_node is None:
+                # default selector — basename, with `/vN` semantic-version
+                # suffix falling through to the previous segment. Either way
+                # the binding is heuristic (real package clause may differ).
+                selector = self._derive_default_selector(path)
+                confidence = "low"
+            else:
+                t = self._text(selector_node, src_bytes)
+                if t == "_":
+                    is_blank = True
+                    selector = "_"
+                elif t == ".":
+                    is_dot = True
+                    selector = "."
+                else:
+                    selector = t
+                    confidence = "high"
+
+            target_id = f"go:{path}"
+            imports.append(_ImportEntry(
+                selector=selector, path=path, package_id=target_id,
+                confidence=confidence, is_blank=is_blank, is_dot=is_dot,
+            ))
+            references.append(Reference(
+                from_id=from_id,
+                to_id=target_id,
+                to_external=path,
+                file=rel,
+                line=self._line(spec),
+                kind="import",
+                lang="go",
+                resolved=False,
+                lang_meta={"import_name_confidence": confidence},
+            ))
+
+    @staticmethod
+    def _derive_default_selector(path: str) -> str:
+        """Default import selector = basename, except `/vN` semantic version
+        segments which fall through to the previous segment."""
+        segments = [s for s in path.split("/") if s]
+        if not segments:
+            return path
+        last = segments[-1]
+        if re.fullmatch(r"v\d+", last) and len(segments) >= 2:
+            return segments[-2]
+        return last
 
     def _handle_method_decl(
         self, node, src_bytes, rel, module_path, rel_dir, symbols, references,
@@ -274,7 +363,7 @@ class GoParser(LanguageParser):
         ))
 
     def _handle_type_decl(
-        self, node, src_bytes, rel, module_path, rel_dir, symbols, references,
+        self, node, src_bytes, rel, module_path, rel_dir, imports, symbols, references,
     ):
         for spec in node.children:
             if spec.type != "type_spec":
@@ -327,12 +416,13 @@ class GoParser(LanguageParser):
 
             if inner is not None and inner.type == "struct_type":
                 self._emit_struct_fields(
-                    inner, src_bytes, rel, module_path, rel_dir, name, symbols, references,
+                    inner, src_bytes, rel, module_path, rel_dir, name,
+                    imports, symbols, references,
                 )
 
     def _emit_struct_fields(
         self, struct_node, src_bytes, rel, module_path, rel_dir, type_name,
-        symbols, references,
+        imports, symbols, references,
     ):
         body = next((c for c in struct_node.children if c.type == "field_declaration_list"), None)
         if body is None:
@@ -371,10 +461,14 @@ class GoParser(LanguageParser):
                         pkg_node = next((x for x in c.children if x.type == "package_identifier"), None)
                         tname_node = next((x for x in c.children if x.type == "type_identifier"), None)
                         if pkg_node is not None and tname_node is not None:
-                            embed_external = f"{self._text(pkg_node, src_bytes)}.{self._text(tname_node, src_bytes)}"
-                            # Cross-package id resolution is filled in by Task 13
-                            # once the import table exists.
-                            embed_id = ""
+                            pkg_sel = self._text(pkg_node, src_bytes)
+                            tname = self._text(tname_node, src_bytes)
+                            embed_external = f"{pkg_sel}.{tname}"
+                            match = next((e for e in imports if e.selector == pkg_sel), None)
+                            if match is not None:
+                                embed_id = f"{match.package_id}.{tname}"
+                            else:
+                                embed_id = ""
                         break
                 if embed_id is not None:
                     references.append(Reference(

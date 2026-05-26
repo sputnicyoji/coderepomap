@@ -137,3 +137,65 @@ def test_struct_embedding_emits_inherits(parsed):
         and r.to_id == "go:example.com/myapp/pkg/service.Result"
     )
     assert edge.to_external in ("Result",)
+
+
+def test_import_default_alias(parsed):
+    _, refs = parsed["pkg/handler/handler.go"]
+    imp = [r for r in refs if r.kind == "import"]
+    assert any(
+        r.to_id == "go:example.com/myapp/pkg/service"
+        and r.to_external == "example.com/myapp/pkg/service"
+        for r in imp
+    )
+
+
+def test_import_explicit_alias(parsed):
+    _, refs = parsed["main.go"]
+    imp = [r for r in refs if r.kind == "import"]
+    assert any(
+        r.to_id == "go:example.com/myapp/pkg/service"
+        for r in imp
+    )
+
+
+def test_import_default_name_differs_from_path_base(tmp_path):
+    """Default import uses basename as selector and marks confidence='low'."""
+    src_root = tmp_path
+    (src_root / "go.mod").write_text("module example.com/x\n", encoding="utf-8")
+    sub = src_root / "consumer"
+    sub.mkdir()
+    (sub / "main.go").write_text(
+        'package consumer\n'
+        'import "example.com/x/lib/zoo"\n'
+        'func F() { zoo.Touch() }\n',
+        encoding="utf-8",
+    )
+    p = GoParser()
+    _, refs = p.parse_file(sub / "main.go", src_root)
+    imp = next(r for r in refs if r.kind == "import" and r.to_external == "example.com/x/lib/zoo")
+    assert imp.lang_meta.get("import_name_confidence") == "low"
+
+
+def test_import_major_version_suffix(tmp_path):
+    """`/v2` is not used as selector name; previous segment is used instead."""
+    src_root = tmp_path
+    (src_root / "go.mod").write_text("module example.com/x\n", encoding="utf-8")
+    sub = src_root / "consumer"
+    sub.mkdir()
+    (sub / "main.go").write_text(
+        'package consumer\n'
+        'import "github.com/foo/bar/v2"\n'
+        'func F() { bar.Use() }\n',
+        encoding="utf-8",
+    )
+    p = GoParser()
+    _, refs = p.parse_file(sub / "main.go", src_root)
+    imp = next(r for r in refs if r.kind == "import" and r.to_external == "github.com/foo/bar/v2")
+    assert imp.to_id == "go:github.com/foo/bar/v2"
+
+
+def test_generic_type_id_has_no_brackets(parsed):
+    syms, _ = parsed["pkg/service/service.go"]
+    box = next(s for s in syms if s.name == "GenericBox")
+    assert "[" not in box.id
+    assert "T" in box.lang_meta.get("generic_params", [])
