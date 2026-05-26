@@ -1,245 +1,157 @@
-# csharp-repomap
+# coderepomap
 
-[![PyPI version](https://badge.fury.io/py/csharp-repomap.svg)](https://badge.fury.io/py/csharp-repomap)
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![PyPI](https://img.shields.io/pypi/v/coderepomap.svg)](https://pypi.org/project/coderepomap/)
+[![Python](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
+[![License](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
+
+> Layered, multi-language code maps for AI coding agents. C# + Lua, U3D cross-language references, tuned for Claude / Cursor / Copilot.
 
 **English** | **[简体中文](README.zh-CN.md)** | **[日本語](README.ja.md)**
 
-> **Boost AI Agent efficiency for C# codebases** - Save tokens, improve accuracy, accelerate development.
+---
 
-## The Problem
+`coderepomap` scans a codebase and emits three Markdown layers — module skeleton, class signatures, and reference graph — sized to roughly 1k / 2k / 3k tokens. AI agents read the layer they need instead of paging through every file, so they spend tokens on the code that matters and catch cross-file references they would otherwise miss.
 
-AI coding agents (Claude Code, Cursor, Copilot) struggle with large C# codebases:
+Language support is plugin-based: C# and Lua ship in the box. In Unity + xLua / sLua / ToLua projects, Lua-side calls into C# (`CS.UnityEngine.GameObject`) resolve to real C# symbols in the same L3 graph.
 
-| Challenge | Impact |
-|-----------|--------|
-| **Context limit** | Can't see 1000+ files at once |
-| **Blind spots** | Misses important classes, makes wrong assumptions |
-| **Token waste** | Loads irrelevant code, burns context window |
-| **Slow iteration** | Multiple rounds to understand structure |
+> [!NOTE]
+> v0.2.0 was renamed from `csharp-repomap` and is **not** backward compatible. v0.1.0 users: `pip uninstall csharp-repomap && pip install coderepomap[csharp]`.
 
-## The Solution
+## Features
 
-**csharp-repomap** generates intelligent code maps that give AI agents a **bird's-eye view** of your codebase:
+- **Three layers, one budget.** L1 skeleton / L2 signatures / L3 relations, each capped by a configurable token budget (`tiktoken` precise, 4-chars-per-token fallback).
+- **Multi-language plugin system.** C# (`tree-sitter-c-sharp`) and Lua (`tree-sitter-lua`) share one `LanguageParser` contract; add more by dropping in a subpackage.
+- **Cross-language graph.** Lua → C# references resolved through a project-wide symbol index, with ambiguous candidates surfaced rather than silently merged.
+- **PageRank-ranked output.** Important classes float to the top of every layer; ranking is plugin-tunable via prefix/suffix boost patterns.
+- **Stable Symbol IDs.** Overload-aware (`csharp:Ns.Type.Method(int,string)`), instance-vs-static distinct (`lua:mod.T#method` vs `lua:mod.T.f`).
+- **Git hooks.** Drop-in `post-checkout` / `post-merge` regeneration; opt-in Windows toast notifier.
 
-```
-1000+ C# files  →  3 markdown files (~6k tokens total)
-                   ├── L1: Module skeleton (what exists)
-                   ├── L2: Class signatures (what matters)
-                   └── L3: Reference graph (how they connect)
-```
+## Install
 
-### Results
-
-| Metric | Without RepoMap | With RepoMap |
-|--------|-----------------|--------------|
-| **Tokens per task** | 50k-100k | 10k-30k |
-| **Code accuracy** | ~70% | ~95% |
-| **Iterations needed** | 3-5 rounds | 1-2 rounds |
-| **"File not found" errors** | Frequent | Rare |
-
-## How It Works
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    Your C# Codebase                         │
-│                    (1000+ files)                            │
-└─────────────────────────────────────────────────────────────┘
-                            │
-                            ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    csharp-repomap                           │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐         │
-│  │ Tree-sitter │→ │  Symbol     │→ │  PageRank   │         │
-│  │ C# Parser   │  │  Extraction │  │  Ranking    │         │
-│  └─────────────┘  └─────────────┘  └─────────────┘         │
-└─────────────────────────────────────────────────────────────┘
-                            │
-              ┌─────────────┼─────────────┐
-              ▼             ▼             ▼
-        ┌─────────┐   ┌─────────┐   ┌─────────┐
-        │ L1 ~1k  │   │ L2 ~2k  │   │ L3 ~3k  │
-        │ tokens  │   │ tokens  │   │ tokens  │
-        └─────────┘   └─────────┘   └─────────┘
-              │             │             │
-              └─────────────┼─────────────┘
-                            ▼
-┌─────────────────────────────────────────────────────────────┐
-│                      AI Agent                               │
-│  "I can see the entire codebase structure in 6k tokens!"   │
-│  "I know which classes are important!"                      │
-│  "I understand how modules connect!"                        │
-└─────────────────────────────────────────────────────────────┘
-```
-
-## Key Features
-
-| Feature | Benefit |
-|---------|---------|
-| **PageRank ranking** | AI sees important classes first, not random files |
-| **Token-limited output** | Fits in context window, no overflow |
-| **Layered detail** | L1 for overview → L2/L3 for deep dive |
-| **Git hooks** | Auto-update on pull/merge, always fresh |
-| **Cross-platform** | Windows, macOS, Linux notifications |
-
-## Installation
+Pick the extras that match your project:
 
 ```bash
-pip install csharp-repomap
+pip install coderepomap[csharp]              # C# / Unity
+pip install coderepomap[lua]                 # pure Lua
+pip install coderepomap[csharp,lua,tiktoken] # U3D mixed + precise tokens
 ```
 
-## Quick Start
+> [!TIP]
+> `tiktoken` is optional. Without it, layers use a 4-chars-per-token fallback — fine for budgeting, less precise at the edge. Install for production accuracy.
+
+## Quick start
 
 ```bash
-# Initialize (choose your project type)
-cd your-csharp-project
-repomap init --preset unity    # Unity projects
-repomap init --preset generic  # Other C# projects
-
-# Generate the map
-repomap generate --verbose
-
-# Auto-update on git operations
-repomap hooks --install
+cd your-project
+repomap init --lang csharp --preset unity   # or --lang lua / --preset generic
+repomap generate
 ```
 
-## Output Structure
+Outputs land in `.repomap/output/`:
 
-Generated in `.repomap/output/`:
+| File | Description |
+|---|---|
+| `repomap-L1-skeleton.md` | Module-level overview (~1k tokens) |
+| `repomap-L2-signatures.md` | Class / function signatures (~2k tokens) |
+| `repomap-L3-relations.md` | Reference graph + external refs (~3k tokens) |
+| `repomap-meta.json` | Stats, git commit, ranker info |
 
-### L1 - Skeleton (~1k tokens)
-```markdown
-# MyProject Repo Map (L1)
-> 45 modules | 320 classes | Generated: 2026-01-13
-
-## Module Overview
-- Player/ (12 classes) - Player management
-- Combat/ (28 classes) - Battle system
-- UI/ (45 classes) - User interface
-
-## Core Entry Points
-| Class | Module | Why Important |
-|-------|--------|---------------|
-| GameManager | Core | Central coordinator |
-| PlayerService | Player | Player state management |
-```
-
-### L2 - Signatures (~2k tokens)
-```markdown
-# MyProject Repo Map (L2)
-
-## GameManager (rank: 0.95)
-+ Initialize() : void
-+ Update(deltaTime: float) : void
-+ GetService<T>() : T
-
-## PlayerService (rank: 0.87)
-+ LoadPlayer(id: string) : async Task<Player>
-+ SavePlayer(player: Player) : async Task
-```
-
-### L3 - Relations (~3k tokens)
-```markdown
-# MyProject Repo Map (L3)
-
-GameManager (refs: 15)
-├── → PlayerService (uses)
-├── → CombatSystem (uses)
-├── → UIManager (uses)
-└── ← SceneLoader (called by)
-```
-
-## Usage with AI Agents
-
-### Claude Code
-```bash
-# Add to your CLAUDE.md or project context:
-"Before implementing any feature, read .repomap/output/ to understand the codebase structure."
-```
-
-### Cursor / Copilot
-Add `.repomap/output/` to your project's AI context or include in prompts.
-
-### Example Prompt
-> "Look at the L1 repo map to understand the module structure.
-> Then check L2 for the PlayerService signatures.
-> Now implement a new method to handle player inventory."
+Point your AI agent at whichever layer matches the question.
 
 ## Configuration
 
-Edit `.repomap/config.yaml`:
+Single-language (`.repomap/config.yaml`):
 
 ```yaml
-project_name: "My Game"
-
+project_name: My Game
+lang: csharp                            # or: lua
 source:
-  root_path: "Assets/Scripts"
-  exclude_patterns:
-    - "**/Editor/**"
-    - "**/Tests/**"
-
-# Token budgets per layer
-tokens:
-  l1_skeleton: 1000
-  l2_signatures: 2000
-  l3_relations: 3000
-
-# Boost important class patterns
-importance_boost:
-  patterns:
-    - prefix: "S"           # SPlayerService → boost
-      boost: 2.0
-    - suffix: "Manager"     # GameManager → boost
-      boost: 1.5
+  root_path: Assets/Scripts
+  exclude_patterns: ["**/Editor/**", "**/Tests/**"]
 ```
 
-## Presets
+Multi-language (Unity + Lua):
 
-### Unity Preset
-- Path: `Assets/Scripts`
-- Boosts: `SXxx` service classes
-- Categories: Core, Game, UI, Data, Network, Audio
-
-### Generic Preset
-- Path: `src`
-- Boosts: `Service`, `Repository`, `Controller`
-- Categories: Core, Domain, Application, API, Data
-
-## Why PageRank?
-
-Not all classes are equal. PageRank identifies **actually important** classes by analyzing the reference graph:
-
-```
-High PageRank (important):
-  - Referenced by many other classes
-  - Central to the architecture
-  - AI should know about these first
-
-Low PageRank (peripheral):
-  - Utility classes, DTOs
-  - Can be discovered on-demand
-  - Don't waste tokens on these
+```yaml
+project_name: Unity + xLua
+langs: [csharp, lua]
+sources:
+  csharp:
+    root_path: Assets/Scripts
+    exclude_patterns: ["**/Editor/**"]
+  lua:
+    root_path: Assets/LuaScripts
+crosslang:
+  enabled: true
+  lua_csharp_call_patterns:
+    - prefix: "CS."                     # xLua
+    # - prefix: "UnityEngine."          # sLua / ToLua
 ```
 
-## Requirements
+`repomap init` writes a starter file; edit before running `repomap generate`.
 
-- Python 3.8+
-- Git (for hooks and commit info)
-- Windows 10+ / macOS / Linux
+> [!IMPORTANT]
+> When using `langs:` the loader drops the default `lang:` automatically — both keys at once raises a clear error. Configs without either field fall back to single-lang C# (v0.1.0 compatibility).
 
-## Contributing
+## Cross-language references (Lua → C#)
 
-Contributions welcome! Please submit a Pull Request.
+The Lua parser emits a `csharp_call` reference for `CS.X.Y.Z` chains and for aliases (`local GO = CS.X.Y; GO.Find(...)`). The resolver:
 
-## License
+1. Strips the configured Lua-side prefix (`CS.`, `UnityEngine.`, …).
+2. Tries an exact C# FQN match against the project-wide type index.
+3. Falls back to the enclosing type when the chain ends in a method name.
+4. Falls back to a project-wide short-name lookup; unique → resolved; multiple → unresolved with `lang_meta.candidates` for L3 review.
 
-MIT License - see [LICENSE](LICENSE)
+Resolved edges enter the PageRank graph; unresolved ones surface under **External References** in L3. Algorithm details: [docs/crosslang.md](docs/crosslang.md).
 
-## Author
+## Language support
 
-Created by [Yoji](https://github.com/sputnicyoji)
+| Language | Parser | Identifier scheme | Highlights |
+|---|---|---|---|
+| C# | `tree-sitter-c-sharp` + regex fallback | `csharp:Ns.Type.Method(paramtypes)` | Namespaces (incl. file-scoped), nested types, overload-aware ids, Unity preset |
+| Lua | `tree-sitter-lua` + regex fallback | `lua:mod.T#method` (instance), `lua:mod.T.f` (static) | xLua / sLua / ToLua, file-scope alias table, `setmetatable` inheritance |
 
----
+See [docs/lang-csharp.md](docs/lang-csharp.md) and [docs/lang-lua.md](docs/lang-lua.md) for what each parser captures and the known limitations carried over from v0.1.0.
 
-**Star this repo if it helps your AI coding workflow!**
+## CLI
+
+| Command | Flags | Description |
+|---|---|---|
+| `repomap init` | `--lang csharp\|lua`, `--preset unity\|generic`, `--force` | Write `.repomap/config.yaml` |
+| `repomap generate` | `--verbose`, `--notify` | Parse sources, write L1/L2/L3/meta |
+| `repomap status` | — | Show last-run stats + registered language parsers |
+| `repomap hooks` | `--install` (default), `--uninstall`, `--with-notify` | Manage git `post-checkout` / `post-merge` regeneration |
+
+`python -m coderepomap` and `repomap` are interchangeable.
+
+## How it works
+
+```
+Source roots ─► Parser plugin ─► Symbols + References
+                                      │
+                                      ▼
+                              Cross-language resolver
+                                      │
+                                      ▼
+                         PageRank ranker (Symbol.id keyed)
+                                      │
+                                      ▼
+                          L1 / L2 / L3 markdown + meta JSON
+```
+
+The layering keeps each step replaceable — adding a language requires only a new `LanguageParser` subclass; changing the ranking strategy doesn't touch the parsers.
+
+## Development
+
+```bash
+git clone https://github.com/sputnicyoji/csharp_Repomap
+cd csharp_Repomap
+python -m venv .venv && .venv/Scripts/activate    # PowerShell: .venv\Scripts\Activate.ps1
+pip install -e .[csharp,lua,tiktoken,dev]
+pytest tests/
+```
+
+Test fixtures live in `tests/fixtures/`. The C# parser baseline (snapshot + golden markdown) is pinned in `tests/baseline/` — see `tests/generate_baseline.py` if you intentionally need to regenerate. 124 tests cover the parser plugins, ranker, cross-language resolver, CLI, and end-to-end generator runs.
+
+> [!WARNING]
+> The repository is still named `csharp_Repomap` on GitHub for legacy reasons. The package, CLI, and module names are all `coderepomap` (v0.2.0+).

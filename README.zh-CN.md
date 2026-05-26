@@ -1,245 +1,157 @@
-# csharp-repomap
+# coderepomap
 
-[![PyPI version](https://badge.fury.io/py/csharp-repomap.svg)](https://badge.fury.io/py/csharp-repomap)
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![PyPI](https://img.shields.io/pypi/v/coderepomap.svg)](https://pypi.org/project/coderepomap/)
+[![Python](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
+[![License](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
+
+> 为 AI 编码 Agent 设计的分层多语言代码地图。支持 C# + Lua, 含 U3D 跨语言引用解析, 为 Claude / Cursor / Copilot 优化。
 
 **[English](README.md)** | **简体中文** | **[日本語](README.ja.md)**
 
-> **提升 AI Agent 在 C# 代码库中的效率** - 节约 Token，提升准确率，加速开发。
+---
 
-## 问题背景
+`coderepomap` 扫描代码库, 生成三层 Markdown — 模块骨架、类签名、引用关系图 — 每层约 1k / 2k / 3k token. AI Agent 只读所需的那一层, 不再翻阅每个文件; token 花在重要代码上, 跨文件引用不再遗漏。
 
-AI 编码 Agent（Claude Code、Cursor、Copilot）在处理大型 C# 代码库时面临挑战：
+语言支持基于插件: C# 和 Lua 开箱即用。在 Unity + xLua / sLua / ToLua 项目中, Lua 端对 C# 的调用 (`CS.UnityEngine.GameObject`) 会被解析为同一 L3 图中真实的 C# 符号引用。
 
-| 挑战 | 影响 |
-|------|------|
-| **上下文限制** | 无法同时查看 1000+ 文件 |
-| **盲区** | 遗漏重要类，做出错误假设 |
-| **Token 浪费** | 加载无关代码，消耗上下文窗口 |
-| **迭代缓慢** | 需要多轮对话才能理解结构 |
+> [!NOTE]
+> v0.2.0 从 `csharp-repomap` 改名而来, **不向后兼容**. v0.1.0 用户: `pip uninstall csharp-repomap && pip install coderepomap[csharp]`.
 
-## 解决方案
+## 特性
 
-**csharp-repomap** 生成智能代码地图，为 AI Agent 提供代码库的**鸟瞰视角**：
-
-```
-1000+ C# 文件  →  3 个 Markdown 文件（总计约 6k tokens）
-                   ├── L1: 模块骨架（有什么）
-                   ├── L2: 类签名（什么重要）
-                   └── L3: 引用关系图（如何连接）
-```
-
-### 效果对比
-
-| 指标 | 无 RepoMap | 有 RepoMap |
-|------|------------|------------|
-| **每任务 Token 消耗** | 50k-100k | 10k-30k |
-| **代码准确率** | ~70% | ~95% |
-| **所需迭代轮数** | 3-5 轮 | 1-2 轮 |
-| **"找不到文件"错误** | 频繁 | 罕见 |
-
-## 工作原理
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    你的 C# 代码库                            │
-│                    (1000+ 文件)                              │
-└─────────────────────────────────────────────────────────────┘
-                            │
-                            ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    csharp-repomap                           │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐         │
-│  │ Tree-sitter │→ │   符号      │→ │  PageRank   │         │
-│  │ C# 解析器   │  │   提取      │  │   排序      │         │
-│  └─────────────┘  └─────────────┘  └─────────────┘         │
-└─────────────────────────────────────────────────────────────┘
-                            │
-              ┌─────────────┼─────────────┐
-              ▼             ▼             ▼
-        ┌─────────┐   ┌─────────┐   ┌─────────┐
-        │ L1 ~1k  │   │ L2 ~2k  │   │ L3 ~3k  │
-        │ tokens  │   │ tokens  │   │ tokens  │
-        └─────────┘   └─────────┘   └─────────┘
-              │             │             │
-              └─────────────┼─────────────┘
-                            ▼
-┌─────────────────────────────────────────────────────────────┐
-│                      AI Agent                               │
-│  "我用 6k tokens 就能看到整个代码库结构！"                    │
-│  "我知道哪些类是重要的！"                                    │
-│  "我理解各模块如何连接！"                                    │
-└─────────────────────────────────────────────────────────────┘
-```
-
-## 核心特性
-
-| 特性 | 收益 |
-|------|------|
-| **PageRank 排序** | AI 优先看到重要类，而非随机文件 |
-| **Token 限制输出** | 适配上下文窗口，不会溢出 |
-| **分层细节** | L1 概览 → L2/L3 深入 |
-| **Git hooks** | pull/merge 时自动更新，保持最新 |
-| **跨平台** | Windows、macOS、Linux 通知支持 |
+- **三层一预算**. L1 骨架 / L2 签名 / L3 关系图, 各自由可配置 token 预算限制 (装 `tiktoken` 精确计数, 否则按 4 字符/token 估算).
+- **多语言插件系统**. C# (`tree-sitter-c-sharp`) 和 Lua (`tree-sitter-lua`) 共享同一 `LanguageParser` 契约; 新增语言只需添加子包.
+- **跨语言图**. Lua → C# 引用通过项目级符号索引解析, 多个候选时明示而非静默合并.
+- **PageRank 排名**. 重要类浮到每层顶端; 排名可通过 prefix/suffix boost 模式定制.
+- **稳定 Symbol ID**. 重载感知 (`csharp:Ns.Type.Method(int,string)`), 区分实例与静态方法 (`lua:mod.T#method` vs `lua:mod.T.f`).
+- **Git 钩子**. 一键安装 `post-checkout` / `post-merge` 自动重生成; Windows 桌面通知可选.
 
 ## 安装
 
+根据项目类型选 extras:
+
 ```bash
-pip install csharp-repomap
+pip install coderepomap[csharp]              # C# / Unity
+pip install coderepomap[lua]                 # 纯 Lua
+pip install coderepomap[csharp,lua,tiktoken] # U3D 混合 + 精确 token
 ```
+
+> [!TIP]
+> `tiktoken` 可选。未装时使用 4 字符/token 估算 — 预算控制够用, 但边界不精确。生产环境推荐安装。
 
 ## 快速开始
 
 ```bash
-# 初始化（选择项目类型）
-cd your-csharp-project
-repomap init --preset unity    # Unity 项目
-repomap init --preset generic  # 其他 C# 项目
-
-# 生成地图
-repomap generate --verbose
-
-# 设置 git 操作时自动更新
-repomap hooks --install
+cd your-project
+repomap init --lang csharp --preset unity   # 或 --lang lua / --preset generic
+repomap generate
 ```
 
-## 输出结构
+输出位于 `.repomap/output/`:
 
-生成在 `.repomap/output/` 目录：
+| 文件 | 说明 |
+|---|---|
+| `repomap-L1-skeleton.md` | 模块级概览 (约 1k token) |
+| `repomap-L2-signatures.md` | 类 / 函数签名 (约 2k token) |
+| `repomap-L3-relations.md` | 引用关系图 + 外部引用 (约 3k token) |
+| `repomap-meta.json` | 统计、git 提交、ranker 信息 |
 
-### L1 - 骨架（约 1k tokens）
-```markdown
-# MyProject 代码地图 (L1)
-> 45 模块 | 320 类 | 生成时间: 2026-01-13
-
-## 模块概览
-- Player/ (12 个类) - 玩家管理
-- Combat/ (28 个类) - 战斗系统
-- UI/ (45 个类) - 用户界面
-
-## 核心入口点
-| 类名 | 模块 | 为何重要 |
-|------|------|----------|
-| GameManager | Core | 中央协调器 |
-| PlayerService | Player | 玩家状态管理 |
-```
-
-### L2 - 签名（约 2k tokens）
-```markdown
-# MyProject 代码地图 (L2)
-
-## GameManager (rank: 0.95)
-+ Initialize() : void
-+ Update(deltaTime: float) : void
-+ GetService<T>() : T
-
-## PlayerService (rank: 0.87)
-+ LoadPlayer(id: string) : async Task<Player>
-+ SavePlayer(player: Player) : async Task
-```
-
-### L3 - 关系（约 3k tokens）
-```markdown
-# MyProject 代码地图 (L3)
-
-GameManager (refs: 15)
-├── → PlayerService (使用)
-├── → CombatSystem (使用)
-├── → UIManager (使用)
-└── ← SceneLoader (被调用)
-```
-
-## 配合 AI Agent 使用
-
-### Claude Code
-```bash
-# 添加到 CLAUDE.md 或项目上下文：
-"实现任何功能前，先阅读 .repomap/output/ 理解代码库结构。"
-```
-
-### Cursor / Copilot
-将 `.repomap/output/` 添加到项目的 AI 上下文中。
-
-### 示例提示词
-> "查看 L1 代码地图理解模块结构。
-> 然后检查 L2 获取 PlayerService 的签名。
-> 现在实现一个处理玩家背包的新方法。"
+把对应层交给 AI Agent 即可。
 
 ## 配置
 
-编辑 `.repomap/config.yaml`：
+单语言 (`.repomap/config.yaml`):
 
 ```yaml
-project_name: "我的游戏"
-
+project_name: My Game
+lang: csharp                            # 或: lua
 source:
-  root_path: "Assets/Scripts"
-  exclude_patterns:
-    - "**/Editor/**"
-    - "**/Tests/**"
-
-# 每层的 Token 预算
-tokens:
-  l1_skeleton: 1000
-  l2_signatures: 2000
-  l3_relations: 3000
-
-# 提升重要类模式的权重
-importance_boost:
-  patterns:
-    - prefix: "S"           # SPlayerService → 提升
-      boost: 2.0
-    - suffix: "Manager"     # GameManager → 提升
-      boost: 1.5
+  root_path: Assets/Scripts
+  exclude_patterns: ["**/Editor/**", "**/Tests/**"]
 ```
 
-## 预设配置
+多语言 (Unity + Lua):
 
-### Unity 预设
-- 路径：`Assets/Scripts`
-- 提升：`SXxx` 服务类
-- 分类：Core、Game、UI、Data、Network、Audio
-
-### 通用预设
-- 路径：`src`
-- 提升：`Service`、`Repository`、`Controller`
-- 分类：Core、Domain、Application、API、Data
-
-## 为什么用 PageRank？
-
-不是所有类都同等重要。PageRank 通过分析引用图识别**真正重要**的类：
-
-```
-高 PageRank（重要）：
-  - 被许多其他类引用
-  - 架构中心位置
-  - AI 应该优先了解
-
-低 PageRank（边缘）：
-  - 工具类、DTO
-  - 可以按需发现
-  - 不要在这些上浪费 Token
+```yaml
+project_name: Unity + xLua
+langs: [csharp, lua]
+sources:
+  csharp:
+    root_path: Assets/Scripts
+    exclude_patterns: ["**/Editor/**"]
+  lua:
+    root_path: Assets/LuaScripts
+crosslang:
+  enabled: true
+  lua_csharp_call_patterns:
+    - prefix: "CS."                     # xLua
+    # - prefix: "UnityEngine."          # sLua / ToLua
 ```
 
-## 系统要求
+`repomap init` 写入模板, 根据需要编辑后跑 `repomap generate`.
 
-- Python 3.8+
-- Git（用于 hooks 和提交信息）
-- Windows 10+ / macOS / Linux
+> [!IMPORTANT]
+> 使用 `langs:` 时, loader 自动丢弃默认的 `lang:` — 两者同时出现会报清晰错误. 不含这两个字段的配置回退到 C# 单语言模式 (v0.1.0 兼容).
 
-## 贡献
+## 跨语言引用 (Lua → C#)
 
-欢迎贡献！请提交 Pull Request。
+Lua 解析器对 `CS.X.Y.Z` 链与别名 (`local GO = CS.X.Y; GO.Find(...)`) 生成 `csharp_call` 引用. 解析器:
 
-## 许可证
+1. 去除 Lua 侧配置的前缀 (`CS.` / `UnityEngine.` ...).
+2. 与项目级 C# 类型索引做精确 FQN 匹配.
+3. 链尾为方法名时降级到所属类型.
+4. 项目级 short name 查找; 唯一命中即 resolved; 多候选保留 `lang_meta.candidates` 供 L3 审查.
 
-MIT 许可证 - 详见 [LICENSE](LICENSE)
+resolved 边进 PageRank 图; unresolved 在 L3 **External References** 章节. 算法细节见 [docs/crosslang.md](docs/crosslang.md).
 
-## 作者
+## 语言支持
 
-由 [Yoji](https://github.com/sputnicyoji) 创建
+| 语言 | 解析器 | 标识符方案 | 特点 |
+|---|---|---|---|
+| C# | `tree-sitter-c-sharp` + 正则 fallback | `csharp:Ns.Type.Method(paramtypes)` | 命名空间 (含 file-scoped), 嵌套类, 重载感知 ID, Unity 预设 |
+| Lua | `tree-sitter-lua` + 正则 fallback | `lua:mod.T#method` (实例), `lua:mod.T.f` (静态) | xLua / sLua / ToLua, 文件级 alias 表, `setmetatable` 继承 |
 
----
+详见 [docs/lang-csharp.md](docs/lang-csharp.md) 和 [docs/lang-lua.md](docs/lang-lua.md).
 
-**如果这个工具对你的 AI 编码工作流有帮助，请 Star！**
+## CLI
+
+| 命令 | 参数 | 说明 |
+|---|---|---|
+| `repomap init` | `--lang csharp\|lua`, `--preset unity\|generic`, `--force` | 写入 `.repomap/config.yaml` |
+| `repomap generate` | `--verbose`, `--notify` | 解析源码, 写出 L1/L2/L3/meta |
+| `repomap status` | — | 显示上次运行的统计与已注册解析器 |
+| `repomap hooks` | `--install` (默认), `--uninstall`, `--with-notify` | 管理 git `post-checkout` / `post-merge` 钩子 |
+
+`python -m coderepomap` 与 `repomap` 等价.
+
+## 工作原理
+
+```
+源码根目录 ─► 语言解析器插件 ─► Symbols + References
+                                       │
+                                       ▼
+                              跨语言解析器
+                                       │
+                                       ▼
+                       PageRank ranker (按 Symbol.id 索引)
+                                       │
+                                       ▼
+                       L1 / L2 / L3 markdown + meta JSON
+```
+
+分层使每个环节可替换 — 新增语言只需写一个 `LanguageParser` 子类; 更换排名策略不影响解析器.
+
+## 开发
+
+```bash
+git clone https://github.com/sputnicyoji/csharp_Repomap
+cd csharp_Repomap
+python -m venv .venv && .venv/Scripts/activate    # PowerShell: .venv\Scripts\Activate.ps1
+pip install -e .[csharp,lua,tiktoken,dev]
+pytest tests/
+```
+
+测试 fixture 位于 `tests/fixtures/`. C# 解析器基线 (snapshot + golden markdown) 固定在 `tests/baseline/` — 如需有意重生成参见 `tests/generate_baseline.py`. 124 个测试覆盖解析器插件、ranker、跨语言解析器、CLI 和端到端 generator.
+
+> [!WARNING]
+> GitHub 仓库出于历史原因仍叫 `csharp_Repomap`. 包名、CLI、模块名都已是 `coderepomap` (v0.2.0+).

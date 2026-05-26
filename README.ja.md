@@ -1,245 +1,157 @@
-# csharp-repomap
+# coderepomap
 
-[![PyPI version](https://badge.fury.io/py/csharp-repomap.svg)](https://badge.fury.io/py/csharp-repomap)
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![PyPI](https://img.shields.io/pypi/v/coderepomap.svg)](https://pypi.org/project/coderepomap/)
+[![Python](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
+[![License](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
+
+> AI コーディング Agent のためのレイヤード多言語コードマップ。C# + Lua 対応、U3D クロスランゲージ参照解析つき、Claude / Cursor / Copilot 向け最適化。
 
 **[English](README.md)** | **[简体中文](README.zh-CN.md)** | **日本語**
 
-> **C#コードベースでのAI Agentの効率を向上** - トークン節約、精度向上、開発加速。
+---
 
-## 課題
+`coderepomap` はコードベースをスキャンし、モジュールスケルトン・クラスシグネチャ・参照グラフという 3 層の Markdown を出力します。各層は約 1k / 2k / 3k トークンに収まるよう調整されています。AI Agent は必要なレイヤだけを読めばよく、全ファイルをめくる必要がありません。重要なコードにトークンを集中でき、ファイル間の参照を見落とすこともなくなります。
 
-AIコーディングエージェント（Claude Code、Cursor、Copilot）は大規模なC#コードベースで苦戦します：
+言語サポートはプラグイン式です。C# と Lua は同梱されています。Unity + xLua / sLua / ToLua プロジェクトでは、Lua 側から C# 型への呼び出し (`CS.UnityEngine.GameObject`) が同じ L3 グラフ内で実際の C# シンボル参照として解決されます。
 
-| 課題 | 影響 |
-|------|------|
-| **コンテキスト制限** | 1000+ファイルを同時に見られない |
-| **盲点** | 重要なクラスを見落とし、誤った仮定をする |
-| **トークン浪費** | 無関係なコードを読み込み、コンテキストを消費 |
-| **遅い反復** | 構造理解に複数ラウンド必要 |
+> [!NOTE]
+> v0.2.0 で `csharp-repomap` から改名されました。**後方互換性はありません**。v0.1.0 ユーザー: `pip uninstall csharp-repomap && pip install coderepomap[csharp]`。
 
-## 解決策
+## 特徴
 
-**csharp-repomap** はAI Agentにコードベースの**俯瞰図**を提供するインテリジェントなコードマップを生成：
-
-```
-1000+ C#ファイル  →  3つのMarkdownファイル（合計約6kトークン）
-                     ├── L1: モジュールスケルトン（何があるか）
-                     ├── L2: クラスシグネチャ（何が重要か）
-                     └── L3: 参照グラフ（どう繋がるか）
-```
-
-### 効果比較
-
-| 指標 | RepoMapなし | RepoMapあり |
-|------|-------------|-------------|
-| **タスクあたりトークン** | 50k-100k | 10k-30k |
-| **コード精度** | ~70% | ~95% |
-| **必要な反復回数** | 3-5ラウンド | 1-2ラウンド |
-| **「ファイルが見つからない」エラー** | 頻繁 | まれ |
-
-## 仕組み
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    あなたのC#コードベース                     │
-│                    (1000+ファイル)                           │
-└─────────────────────────────────────────────────────────────┘
-                            │
-                            ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    csharp-repomap                           │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐         │
-│  │ Tree-sitter │→ │  シンボル   │→ │  PageRank   │         │
-│  │ C#パーサー  │  │   抽出      │  │  ランキング │         │
-│  └─────────────┘  └─────────────┘  └─────────────┘         │
-└─────────────────────────────────────────────────────────────┘
-                            │
-              ┌─────────────┼─────────────┐
-              ▼             ▼             ▼
-        ┌─────────┐   ┌─────────┐   ┌─────────┐
-        │ L1 ~1k  │   │ L2 ~2k  │   │ L3 ~3k  │
-        │ tokens  │   │ tokens  │   │ tokens  │
-        └─────────┘   └─────────┘   └─────────┘
-              │             │             │
-              └─────────────┼─────────────┘
-                            ▼
-┌─────────────────────────────────────────────────────────────┐
-│                      AI Agent                               │
-│  「6kトークンでコードベース全体の構造が見える！」              │
-│  「どのクラスが重要か分かる！」                               │
-│  「モジュール間の接続が理解できる！」                          │
-└─────────────────────────────────────────────────────────────┘
-```
-
-## 主な機能
-
-| 機能 | メリット |
-|------|----------|
-| **PageRankランキング** | ランダムなファイルではなく重要なクラスを優先表示 |
-| **トークン制限出力** | コンテキストウィンドウに収まる |
-| **階層化された詳細** | L1で概要 → L2/L3で詳細 |
-| **Git hooks** | pull/merge時に自動更新、常に最新 |
-| **クロスプラットフォーム** | Windows、macOS、Linux通知対応 |
+- **3 層 1 予算**。L1 スケルトン / L2 シグネチャ / L3 参照グラフ。各層は設定可能なトークン予算で制限されます (`tiktoken` で正確、未インストール時は 4 文字/トークンのフォールバック)。
+- **多言語プラグイン**。C# (`tree-sitter-c-sharp`) と Lua (`tree-sitter-lua`) は同じ `LanguageParser` 契約を共有。サブパッケージを追加するだけで新しい言語を組み込めます。
+- **クロスランゲージグラフ**。Lua → C# 参照はプロジェクトワイドのシンボルインデックスで解決。曖昧な候補はサイレントマージせず明示します。
+- **PageRank ベースのランキング**。重要なクラスが各層の上位に浮かびます。prefix/suffix のブーストパターンで調整可能。
+- **安定した Symbol ID**。オーバーロード対応 (`csharp:Ns.Type.Method(int,string)`)、インスタンス/スタティックの区別 (`lua:mod.T#method` vs `lua:mod.T.f`)。
+- **Git フック**。`post-checkout` / `post-merge` で自動再生成。Windows トースト通知もオプションで利用可。
 
 ## インストール
 
+プロジェクトに合った extras を選択:
+
 ```bash
-pip install csharp-repomap
+pip install coderepomap[csharp]              # C# / Unity
+pip install coderepomap[lua]                 # 純粋な Lua
+pip install coderepomap[csharp,lua,tiktoken] # U3D 混合 + 正確なトークン計数
 ```
+
+> [!TIP]
+> `tiktoken` はオプションです。未インストール時は 4 文字/トークンのフォールバックを使用 — 予算管理には十分ですが、境界付近では精度が落ちます。本番環境ではインストール推奨。
 
 ## クイックスタート
 
 ```bash
-# 初期化（プロジェクトタイプを選択）
-cd your-csharp-project
-repomap init --preset unity    # Unityプロジェクト
-repomap init --preset generic  # その他のC#プロジェクト
-
-# マップを生成
-repomap generate --verbose
-
-# git操作時の自動更新を設定
-repomap hooks --install
+cd your-project
+repomap init --lang csharp --preset unity   # または --lang lua / --preset generic
+repomap generate
 ```
 
-## 出力構造
+出力は `.repomap/output/` に生成されます:
 
-`.repomap/output/` ディレクトリに生成：
+| ファイル | 説明 |
+|---|---|
+| `repomap-L1-skeleton.md` | モジュールレベル概要 (約 1k トークン) |
+| `repomap-L2-signatures.md` | クラス / 関数シグネチャ (約 2k トークン) |
+| `repomap-L3-relations.md` | 参照グラフ + 外部参照 (約 3k トークン) |
+| `repomap-meta.json` | 統計、git コミット、ranker 情報 |
 
-### L1 - スケルトン（約1kトークン）
-```markdown
-# MyProject コードマップ (L1)
-> 45モジュール | 320クラス | 生成日時: 2026-01-13
-
-## モジュール概要
-- Player/ (12クラス) - プレイヤー管理
-- Combat/ (28クラス) - 戦闘システム
-- UI/ (45クラス) - ユーザーインターフェース
-
-## コアエントリポイント
-| クラス | モジュール | 重要な理由 |
-|--------|----------|------------|
-| GameManager | Core | 中央コーディネーター |
-| PlayerService | Player | プレイヤー状態管理 |
-```
-
-### L2 - シグネチャ（約2kトークン）
-```markdown
-# MyProject コードマップ (L2)
-
-## GameManager (rank: 0.95)
-+ Initialize() : void
-+ Update(deltaTime: float) : void
-+ GetService<T>() : T
-
-## PlayerService (rank: 0.87)
-+ LoadPlayer(id: string) : async Task<Player>
-+ SavePlayer(player: Player) : async Task
-```
-
-### L3 - リレーション（約3kトークン）
-```markdown
-# MyProject コードマップ (L3)
-
-GameManager (refs: 15)
-├── → PlayerService (使用)
-├── → CombatSystem (使用)
-├── → UIManager (使用)
-└── ← SceneLoader (呼び出される)
-```
-
-## AI Agentとの連携
-
-### Claude Code
-```bash
-# CLAUDE.mdまたはプロジェクトコンテキストに追加：
-「機能を実装する前に、.repomap/output/ を読んでコードベース構造を理解してください。」
-```
-
-### Cursor / Copilot
-`.repomap/output/` をプロジェクトのAIコンテキストに追加。
-
-### プロンプト例
-> 「L1コードマップを見てモジュール構造を理解して。
-> 次にL2でPlayerServiceのシグネチャを確認。
-> プレイヤーインベントリを処理する新しいメソッドを実装して。」
+質問に応じたレイヤを AI Agent に渡してください。
 
 ## 設定
 
-`.repomap/config.yaml` を編集：
+単一言語 (`.repomap/config.yaml`):
 
 ```yaml
-project_name: "マイゲーム"
-
+project_name: My Game
+lang: csharp                            # または: lua
 source:
-  root_path: "Assets/Scripts"
-  exclude_patterns:
-    - "**/Editor/**"
-    - "**/Tests/**"
-
-# 各レイヤーのトークン予算
-tokens:
-  l1_skeleton: 1000
-  l2_signatures: 2000
-  l3_relations: 3000
-
-# 重要なクラスパターンの重みを上げる
-importance_boost:
-  patterns:
-    - prefix: "S"           # SPlayerService → ブースト
-      boost: 2.0
-    - suffix: "Manager"     # GameManager → ブースト
-      boost: 1.5
+  root_path: Assets/Scripts
+  exclude_patterns: ["**/Editor/**", "**/Tests/**"]
 ```
 
-## プリセット
+多言語 (Unity + Lua):
 
-### Unityプリセット
-- パス: `Assets/Scripts`
-- ブースト: `SXxx` サービスクラス
-- カテゴリ: Core、Game、UI、Data、Network、Audio
-
-### 汎用プリセット
-- パス: `src`
-- ブースト: `Service`、`Repository`、`Controller`
-- カテゴリ: Core、Domain、Application、API、Data
-
-## なぜPageRank？
-
-すべてのクラスが同等に重要ではありません。PageRankは参照グラフを分析して**本当に重要な**クラスを特定：
-
-```
-高PageRank（重要）：
-  - 多くの他クラスから参照される
-  - アーキテクチャの中心
-  - AIが最初に知るべき
-
-低PageRank（周辺）：
-  - ユーティリティクラス、DTO
-  - 必要に応じて発見可能
-  - トークンを無駄にしない
+```yaml
+project_name: Unity + xLua
+langs: [csharp, lua]
+sources:
+  csharp:
+    root_path: Assets/Scripts
+    exclude_patterns: ["**/Editor/**"]
+  lua:
+    root_path: Assets/LuaScripts
+crosslang:
+  enabled: true
+  lua_csharp_call_patterns:
+    - prefix: "CS."                     # xLua
+    # - prefix: "UnityEngine."          # sLua / ToLua
 ```
 
-## システム要件
+`repomap init` がテンプレートを書き出します。必要に応じて編集してから `repomap generate` を実行してください。
 
-- Python 3.8+
-- Git（hooksとコミット情報用）
-- Windows 10+ / macOS / Linux
+> [!IMPORTANT]
+> `langs:` を使用すると、ローダーがデフォルトの `lang:` を自動的に削除します — 両方同時に存在すると明確なエラーが出ます。どちらもない設定は単一言語 C# モードにフォールバックします (v0.1.0 互換)。
 
-## コントリビュート
+## クロスランゲージ参照 (Lua → C#)
 
-コントリビュート歓迎！Pull Requestをお送りください。
+Lua パーサーは `CS.X.Y.Z` チェーンとエイリアス (`local GO = CS.X.Y; GO.Find(...)`) に対して `csharp_call` 参照を生成します。リゾルバは:
 
-## ライセンス
+1. 設定された Lua 側プレフィックス (`CS.` / `UnityEngine.` …) を剥がす。
+2. プロジェクト全体の C# 型インデックスに対して厳密 FQN マッチを試みる。
+3. チェーンが末尾にメソッド名を持つ場合、外側の型にフォールバック。
+4. プロジェクト全体の short-name 検索 — 唯一一致なら resolved、複数候補は `lang_meta.candidates` を残し L3 でレビュー可能に。
 
-MIT License - [LICENSE](LICENSE) を参照
+resolved エッジは PageRank グラフに入ります。unresolved は L3 の **External References** セクションに出ます。アルゴリズム詳細は [docs/crosslang.md](docs/crosslang.md)。
 
-## 作者
+## 言語サポート
 
-[Yoji](https://github.com/sputnicyoji) 作成
+| 言語 | パーサー | 識別子スキーマ | 特徴 |
+|---|---|---|---|
+| C# | `tree-sitter-c-sharp` + 正規表現フォールバック | `csharp:Ns.Type.Method(paramtypes)` | 名前空間 (file-scoped 含む)、ネスト型、オーバーロード対応 ID、Unity プリセット |
+| Lua | `tree-sitter-lua` + 正規表現フォールバック | `lua:mod.T#method` (インスタンス)、`lua:mod.T.f` (スタティック) | xLua / sLua / ToLua、ファイルスコープエイリアステーブル、`setmetatable` 継承 |
 
----
+詳細は [docs/lang-csharp.md](docs/lang-csharp.md) と [docs/lang-lua.md](docs/lang-lua.md) を参照。
 
-**AIコーディングワークフローに役立ったらスターをお願いします！**
+## CLI
+
+| コマンド | フラグ | 説明 |
+|---|---|---|
+| `repomap init` | `--lang csharp\|lua`, `--preset unity\|generic`, `--force` | `.repomap/config.yaml` を生成 |
+| `repomap generate` | `--verbose`, `--notify` | ソースを解析し L1/L2/L3/meta を出力 |
+| `repomap status` | — | 最終実行の統計と登録済みパーサーを表示 |
+| `repomap hooks` | `--install` (デフォルト), `--uninstall`, `--with-notify` | git `post-checkout` / `post-merge` フックの管理 |
+
+`python -m coderepomap` と `repomap` は等価です。
+
+## 仕組み
+
+```
+ソースルート ─► 言語パーサープラグイン ─► Symbols + References
+                                              │
+                                              ▼
+                                クロスランゲージリゾルバ
+                                              │
+                                              ▼
+                            PageRank ranker (Symbol.id キー)
+                                              │
+                                              ▼
+                            L1 / L2 / L3 markdown + meta JSON
+```
+
+レイヤリングにより各ステップが置き換え可能 — 新言語の追加は `LanguageParser` サブクラスの追加だけで済み、ランキング戦略の変更はパーサーに影響しません。
+
+## 開発
+
+```bash
+git clone https://github.com/sputnicyoji/csharp_Repomap
+cd csharp_Repomap
+python -m venv .venv && .venv/Scripts/activate    # PowerShell: .venv\Scripts\Activate.ps1
+pip install -e .[csharp,lua,tiktoken,dev]
+pytest tests/
+```
+
+テスト fixture は `tests/fixtures/` にあります。C# パーサーのベースライン (snapshot + golden markdown) は `tests/baseline/` に固定されています — 意図的に再生成する場合は `tests/generate_baseline.py` を参照。124 のテストがパーサープラグイン、ranker、クロスランゲージリゾルバ、CLI、エンドツーエンドの generator 実行をカバーします。
+
+> [!WARNING]
+> GitHub リポジトリは歴史的な理由で依然として `csharp_Repomap` という名前です。パッケージ、CLI、モジュール名はすべて `coderepomap` (v0.2.0+) です。
