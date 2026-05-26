@@ -271,3 +271,61 @@ def test_build_graph_uses_union_of_active_language_node_kinds(monkeypatch):
     assert "package" in nk
     assert "interface" in nk
     assert "function" in nk
+
+
+def test_fix_c5_node_kinds_union_respects_parser_intent(monkeypatch):
+    """C5: a parser declaring `graph_node_kinds = ['function']` (no class) must
+    NOT have 'class' force-injected into the active node_kinds union.
+    Co-language class visibility should be opt-in via the C# / Lua parser
+    declaring its own kinds, not via a hard-coded seed."""
+    from pathlib import Path
+
+    from coderepomap.core.generator import RepoMapGenerator
+    from coderepomap.core.parser_base import Symbol
+    from coderepomap.core import registry, parser_base
+
+    captured = {}
+    from coderepomap.core import graph_builder as gb
+    real_build = gb.build_graph
+
+    def spy(symbols, references, ranker, boost_patterns=(), *, node_kinds=None):
+        captured["node_kinds"] = (
+            None if node_kinds is None else frozenset(node_kinds)
+        )
+        return real_build(
+            symbols, references, ranker, boost_patterns, node_kinds=node_kinds
+        )
+
+    monkeypatch.setattr("coderepomap.core.generator.build_graph", spy)
+
+    class _FunOnlyParser(parser_base.LanguageParser):
+        lang = "funlang"
+        file_extensions = [".fl"]
+        graph_node_kinds = ["function"]
+
+        def parse_file(self, path, base):
+            return [], []
+
+    saved = dict(registry.PARSERS)
+    registry.PARSERS["funlang"] = _FunOnlyParser
+    try:
+        gen = RepoMapGenerator(
+            config={"lang": "funlang", "source": {"root_path": "."}},
+            project_root=Path("."),
+        )
+        gen.symbols = [
+            Symbol(id="fl:m.f", name="f", fqn="m.f",
+                   kind="function", file="x.fl", line=1, lang="funlang"),
+        ]
+        gen.references = []
+        gen.build()
+    finally:
+        registry.PARSERS.clear()
+        registry.PARSERS.update(saved)
+
+    nk = captured["node_kinds"]
+    assert nk is not None
+    assert "function" in nk
+    # class must NOT be auto-injected — funlang explicitly excluded it
+    assert "class" not in nk, \
+        f"node_kinds_union force-injected class against parser intent; got {nk}"

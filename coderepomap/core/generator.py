@@ -247,6 +247,7 @@ class RepoMapGenerator:
                 active_langs.append(sym.lang)
 
         node_kinds_union: Optional[List[str]] = None
+        any_declarer = False
         for lang in active_langs:
             try:
                 parser_cls = type(registry.get_parser(lang))
@@ -255,13 +256,28 @@ class RepoMapGenerator:
             declared = getattr(parser_cls, "graph_node_kinds", None)
             if declared is None:
                 continue
+            any_declarer = True
             if node_kinds_union is None:
-                # Always include class so co-language data (e.g. C# nested in
-                # a Go+C# multi-lang project) still appears in the graph.
-                node_kinds_union = ["class"]
+                node_kinds_union = []
             for k in declared:
                 if k not in node_kinds_union:
                     node_kinds_union.append(k)
+        # When at least one parser opted in but other active langs did NOT
+        # declare graph_node_kinds (e.g. C# / Lua alongside Go), include
+        # "class" so their data still reaches the PageRank graph. Parsers that
+        # explicitly exclude "class" by declaring a kind list without it keep
+        # their intent honored — only languages that didn't opt in get the
+        # implicit default.
+        if any_declarer and node_kinds_union is not None:
+            for lang in active_langs:
+                try:
+                    parser_cls = type(registry.get_parser(lang))
+                except Exception:
+                    continue
+                if getattr(parser_cls, "graph_node_kinds", None) is None:
+                    if "class" not in node_kinds_union:
+                        node_kinds_union.append("class")
+                    break
 
         _, unresolved = build_graph(
             self.symbols, self.references, self.ranker, boost_patterns,
