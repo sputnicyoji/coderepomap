@@ -330,3 +330,81 @@ def test_build_module_stats_go_counts_packages_interfaces_functions():
     assert info["class_count"] == 1
     assert info["symbol_count"] == 4
     assert {"Service", "Runner", "NewService"} <= set(info["entries"])
+
+
+def test_render_l1_csharp_only_uses_class_wording():
+    """Byte-compat: CSharp-only run uses '({n} classes)' literal in L1."""
+    from coderepomap.core.parser_base import Symbol
+    from coderepomap.core.renderer import build_module_stats, render_l1
+    from coderepomap.core.ranker import PageRankRanker
+
+    syms = [
+        Symbol(id="csharp:A.X", name="X", fqn="A.X", kind="class",
+               file="A/X.cs", line=1, lang="csharp"),
+    ]
+    r = PageRankRanker()
+    r.add_symbol("csharp:A.X", file="A/X.cs", kind="class",
+                 label="X", fqn="A.X", lang="csharp")
+    out = render_l1(
+        syms, r, build_module_stats(syms),
+        {"tokens": {"l1_skeleton": 4000, "encoding": "cl100k_base"},
+         "categories": {"Other": {"patterns": []}}},
+        project_name="P", git_commit="", today_yyyy_mm_dd="2026-05-26",
+    )
+    assert "classes" in out
+    assert "entry symbols" not in out
+
+
+def test_render_l1_go_uses_entry_symbol_wording():
+    """When non-class kinds dominate a module, wording switches to entry symbols."""
+    from coderepomap.core.parser_base import Symbol
+    from coderepomap.core.renderer import build_module_stats, render_l1
+    from coderepomap.core.ranker import PageRankRanker
+
+    syms = [
+        Symbol(id="go:m/pkg/service", name="service", fqn="m/pkg/service",
+               kind="package", file="pkg/service/service.go", line=1, lang="go"),
+        Symbol(id="go:m/pkg/service.Service", name="Service",
+               fqn="m/pkg/service.Service", kind="class",
+               file="pkg/service/service.go", line=5, lang="go"),
+        Symbol(id="go:m/pkg/service.Runner", name="Runner",
+               fqn="m/pkg/service.Runner", kind="interface",
+               file="pkg/service/service.go", line=3, lang="go"),
+        Symbol(id="go:m/pkg/service.NewService", name="NewService",
+               fqn="m/pkg/service.NewService", kind="function",
+               file="pkg/service/service.go", line=10, lang="go"),
+    ]
+    r = PageRankRanker()
+    for s in syms:
+        r.add_symbol(s.id, file=s.file, kind=s.kind, label=s.name,
+                     fqn=s.fqn, lang=s.lang)
+    out = render_l1(
+        syms, r, build_module_stats(syms),
+        {"tokens": {"l1_skeleton": 4000, "encoding": "cl100k_base"},
+         "categories": {"Other": {"patterns": []}}},
+        project_name="P", git_commit="", today_yyyy_mm_dd="2026-05-26",
+    )
+    assert "entry symbols" in out
+
+
+def test_render_l2_go_drops_class_only_filter_when_widened():
+    from coderepomap.core.parser_base import Symbol
+    from coderepomap.core.renderer import render_l2
+    from coderepomap.core.ranker import PageRankRanker
+
+    syms = [
+        Symbol(id="go:m/pkg/service.Runner", name="Runner",
+               fqn="m/pkg/service.Runner", kind="interface",
+               signature="interface Runner",
+               file="pkg/service/service.go", line=3, lang="go"),
+    ]
+    r = PageRankRanker()
+    r.add_symbol("go:m/pkg/service.Runner", file="pkg/service/service.go",
+                 kind="interface", label="Runner", fqn="m/pkg/service.Runner",
+                 lang="go")
+    out = render_l2(
+        syms, r,
+        {"tokens": {"l2_signatures": 4000, "encoding": "cl100k_base"}},
+        project_name="P",
+    )
+    assert "interface Runner" in out

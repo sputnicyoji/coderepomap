@@ -134,6 +134,13 @@ def render_l1(
     priority_modules = config.get("importance_boost", {}).get("priority_modules", []) or []
     cat_cfg = config.get("categories", {}) or {}
 
+    # Widened wording is triggered globally by presence of `package` kind
+    # symbols (Go emits these; C# / Lua do not). This keeps the v0.1.0 C#
+    # baseline byte-equivalent — a C# file with classes AND interfaces is
+    # still reported as "N classes" because there's no package symbol to
+    # flip the mode.
+    widened_mode = any(s.kind == "package" for s in symbols)
+
     for module, info in sorted_modules:
         rank = module_ranks.get(module, 0)
         cat = categorize_module(module, cat_cfg)
@@ -146,10 +153,17 @@ def render_l1(
         lines.append(f"### {cat_name}")
         for module, info, rank in sorted(mods, key=lambda x: x[2], reverse=True)[:10]:
             active = " [Active]" if module in priority_modules else ""
-            lines.append(f"- {module}/ ({info['class_count']} classes){active}")
+            if widened_mode:
+                lines.append(
+                    f"- {module}/ ({info['symbol_count']} entry symbols){active}"
+                )
+            else:
+                lines.append(
+                    f"- {module}/ ({info['class_count']} classes){active}"
+                )
         lines.append("")
 
-    lines.append("### Core Entry Classes")
+    lines.append("### Core Entry Symbols" if widened_mode else "### Core Entry Classes")
     lines.append("| Module | Entry Class | Key Methods |")
     lines.append("|--------|-------------|-------------|")
 
@@ -220,7 +234,7 @@ def render_l2(
             # Look up class symbol by id so same-named classes in different
             # namespaces stay distinct.
             sym = syms_by_id.get(sid)
-            if sym is None or sym.kind != "class":
+            if sym is None or sym.kind not in _RENDERER_ENTRY_KINDS:
                 continue
             lines.append(f"### {sym.signature}")
             methods = [
