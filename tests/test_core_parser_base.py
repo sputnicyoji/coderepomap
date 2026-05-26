@@ -259,7 +259,10 @@ def test_go_package_id_root_dir():
 
 def test_go_package_id_normalizes_windows_separators():
     from coderepomap.core import identity as ident
-    assert ident.go_package_id("example.com/myapp", "pkg\service") == \
+    # Raw string: literal backslash, not the invalid escape `\s`. Python 3.12+
+    # emits SyntaxWarning for the unraw form; some future Python escalates to
+    # SyntaxError.
+    assert ident.go_package_id("example.com/myapp", r"pkg\service") == \
         "go:example.com/myapp/pkg/service"
 
 

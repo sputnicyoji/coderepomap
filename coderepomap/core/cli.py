@@ -4,7 +4,7 @@
 CLI for coderepomap
 
 Commands:
-    repomap init [--lang csharp|lua] [--preset unity|generic]  Initialize configuration
+    repomap init [--lang csharp|lua|go] [--preset unity|generic]  Initialize configuration
     repomap generate [--verbose] [--notify]                     Generate repo map
     repomap status                                              Show current status
     repomap hooks [--install|--uninstall]                       Manage Git hooks

@@ -41,7 +41,13 @@ def count_tokens(text: str, encoding: str = "cl100k_base") -> int:
 
 
 def _module_from_file(file_path: str) -> str:
-    """First path segment is the module name (matches v0.1.0 behavior)."""
+    """First path segment is the module name (matches v0.1.0 behavior).
+
+    Files at the source root return their filename (e.g. `main.go`), which
+    renders as `main.go/` in L1's module overview. The trailing slash is
+    visually misleading for root files but is preserved here for v0.1.0
+    byte-equivalence; changing it breaks the C# baseline golden tests.
+    """
     parts = file_path.replace("\\", "/").split("/")
     return parts[0] if parts else "Unknown"
 
