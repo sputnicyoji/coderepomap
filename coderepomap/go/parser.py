@@ -101,10 +101,139 @@ class GoParser(LanguageParser):
             self._initialized = True
             return False
 
+    # --- go.mod resolution -------------------------------------------------
+
+    _MOD_RE = re.compile(r"^module\s+([^\s]+)", re.MULTILINE)
+
+    def _resolve_module_path(self, base_path: Path) -> str:
+        """Find `go.mod` at base_path (and ancestors up to filesystem root)."""
+        cached = self._module_path_cache.get(base_path)
+        if cached is not None:
+            return cached
+        cur = base_path.resolve()
+        path = ""
+        for candidate in [cur, *cur.parents]:
+            mod = candidate / "go.mod"
+            if mod.is_file():
+                try:
+                    text = mod.read_text(encoding="utf-8", errors="replace")
+                except OSError:
+                    text = ""
+                m = self._MOD_RE.search(text)
+                if m:
+                    path = m.group(1).strip()
+                break
+        self._module_path_cache[base_path] = path
+        return path
+
+    @staticmethod
+    def _rel_dir_from_file(file_path: Path, base_path: Path) -> str:
+        try:
+            rel = file_path.resolve().relative_to(base_path.resolve())
+        except ValueError:
+            return file_path.parent.as_posix()
+        rel_parent = rel.parent
+        if str(rel_parent) in (".", ""):
+            return ""
+        return rel_parent.as_posix()
+
     # --- entry --------------------------------------------------------------
 
     def parse_file(self, file_path: Path, base_path: Path) -> Tuple[List[Symbol], List[Reference]]:
-        raise NotImplementedError("GoParser.parse_file: implemented in later tasks")
+        try:
+            content = file_path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            try:
+                content = file_path.read_text(encoding="utf-8-sig")
+            except UnicodeDecodeError:
+                content = file_path.read_bytes().decode("utf-8", errors="ignore")
+
+        try:
+            rel = file_path.resolve().relative_to(base_path.resolve()).as_posix()
+        except ValueError:
+            rel = file_path.as_posix()
+
+        module_path = self._resolve_module_path(base_path)
+        rel_dir = self._rel_dir_from_file(file_path, base_path)
+        package_id = ident.go_package_id(module_path, rel_dir)
+
+        if self._init_parser():
+            return self._parse_with_ts(content, rel, module_path, rel_dir, package_id)
+        return self._parse_with_regex(content, rel, module_path, rel_dir, package_id)
+
+    # --- TS walker (filled in by later tasks) -------------------------------
+
+    def _parse_with_ts(
+        self, content: str, rel: str, module_path: str, rel_dir: str, package_id: str,
+    ) -> Tuple[List[Symbol], List[Reference]]:
+        symbols: List[Symbol] = []
+        references: List[Reference] = []
+
+        content_bytes = content.encode("utf-8")
+        try:
+            tree = self._parser.parse(content_bytes)
+        except Exception as e:
+            print(
+                f"Warning: tree-sitter-go failed on {rel}: {type(e).__name__}: {e}. "
+                f"Falling back to regex.", file=sys.stderr,
+            )
+            return self._parse_with_regex(content, rel, module_path, rel_dir, package_id)
+
+        root = tree.root_node
+        package_name = ""
+        for child in root.children:
+            if child.type == "package_clause":
+                for c in child.children:
+                    if c.type == "package_identifier":
+                        package_name = self._text(c, content_bytes)
+                        break
+                break
+
+        if package_id not in self._parsed_packages:
+            self._parsed_packages.add(package_id)
+            display_name = package_name or (
+                package_id.rsplit("/", 1)[-1] if "/" in package_id
+                else package_id[len("go:"):]
+            )
+            symbols.append(Symbol(
+                id=package_id,
+                name=display_name,
+                fqn=package_id[len("go:"):],
+                kind="package",
+                file=rel,
+                line=1,
+                lang="go",
+                lang_meta={
+                    "package_name": package_name,
+                    "import_path": package_id[len("go:"):],
+                },
+            ))
+
+        return symbols, references
+
+    # --- regex fallback (filled in by Task 15) ------------------------------
+
+    def _parse_with_regex(
+        self, content: str, rel: str, module_path: str, rel_dir: str, package_id: str,
+    ) -> Tuple[List[Symbol], List[Reference]]:
+        return [], []
+
+    # --- AST helpers --------------------------------------------------------
+
+    @staticmethod
+    def _text(node, src_bytes: bytes) -> str:
+        try:
+            return src_bytes[node.start_byte:node.end_byte].decode("utf-8", errors="replace")
+        except Exception:
+            return ""
+
+    @staticmethod
+    def _line(node) -> int:
+        return node.start_point[0] + 1
+
+    @staticmethod
+    def _is_exported(name: str) -> bool:
+        return bool(name) and name[0].isupper()
 
 
 __all__ = ["GoParser"]
