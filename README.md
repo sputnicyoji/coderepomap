@@ -4,7 +4,7 @@
 [![Python](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
 
-> Layered, multi-language code maps for AI coding agents. C# + Lua, U3D cross-language references, tuned for Claude / Cursor / Copilot.
+> Layered, multi-language code maps for AI coding agents. C# + Lua + Go, U3D cross-language references, tuned for Claude / Cursor / Copilot.
 
 **English** | **[简体中文](README.zh-CN.md)** | **[日本語](README.ja.md)**
 
@@ -12,7 +12,7 @@
 
 `coderepomap` scans a codebase and emits three Markdown layers — module skeleton, class signatures, and reference graph — sized to roughly 1k / 2k / 3k tokens. AI agents read the layer they need instead of paging through every file, so they spend tokens on the code that matters and catch cross-file references they would otherwise miss.
 
-Language support is plugin-based: C# and Lua ship in the box. In Unity + xLua / sLua / ToLua projects, Lua-side calls into C# (`CS.UnityEngine.GameObject`) resolve to real C# symbols in the same L3 graph.
+Language support is plugin-based: C#, Lua, and Go ship in the box. In Unity + xLua / sLua / ToLua projects, Lua-side calls into C# (`CS.UnityEngine.GameObject`) resolve to real C# symbols in the same L3 graph. Go support targets standard `go.mod` modules with package-aware ids, struct embedding, interface declarations, and import-alias-driven call resolution.
 
 > [!NOTE]
 > v0.2.0 was renamed from `csharp-repomap` and is **not** backward compatible. v0.1.0 users: `pip uninstall csharp-repomap && pip install coderepomap[csharp]`.
@@ -20,7 +20,7 @@ Language support is plugin-based: C# and Lua ship in the box. In Unity + xLua / 
 ## Features
 
 - **Three layers, one budget.** L1 skeleton / L2 signatures / L3 relations, each capped by a configurable token budget (`tiktoken` precise, 4-chars-per-token fallback).
-- **Multi-language plugin system.** C# (`tree-sitter-c-sharp`) and Lua (`tree-sitter-lua`) share one `LanguageParser` contract; add more by dropping in a subpackage.
+- **Multi-language plugin system.** C# (`tree-sitter-c-sharp`), Lua (`tree-sitter-lua`), and Go (`tree-sitter-go`) share one `LanguageParser` contract; add more by dropping in a subpackage.
 - **Cross-language graph.** Lua → C# references resolved through a project-wide symbol index, with ambiguous candidates surfaced rather than silently merged.
 - **PageRank-ranked output.** Important classes float to the top of every layer; ranking is plugin-tunable via prefix/suffix boost patterns.
 - **Stable Symbol IDs.** Overload-aware (`csharp:Ns.Type.Method(int,string)`), instance-vs-static distinct (`lua:mod.T#method` vs `lua:mod.T.f`).
@@ -33,7 +33,8 @@ Pick the extras that match your project:
 ```bash
 pip install coderepomap[csharp]              # C# / Unity
 pip install coderepomap[lua]                 # pure Lua
-pip install coderepomap[csharp,lua,tiktoken] # U3D mixed + precise tokens
+pip install coderepomap[go]                  # Go
+pip install coderepomap[csharp,lua,go,tiktoken] # multi-lang + precise tokens
 ```
 
 > [!TIP]
@@ -43,7 +44,7 @@ pip install coderepomap[csharp,lua,tiktoken] # U3D mixed + precise tokens
 
 ```bash
 cd your-project
-repomap init --lang csharp --preset unity   # or --lang lua / --preset generic
+repomap init --lang csharp --preset unity   # or --lang lua / --lang go / --preset generic
 repomap generate
 ```
 
@@ -64,7 +65,7 @@ Single-language (`.repomap/config.yaml`):
 
 ```yaml
 project_name: My Game
-lang: csharp                            # or: lua
+lang: csharp                            # or: lua / go
 source:
   root_path: Assets/Scripts
   exclude_patterns: ["**/Editor/**", "**/Tests/**"]
