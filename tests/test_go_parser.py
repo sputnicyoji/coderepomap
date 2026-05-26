@@ -453,3 +453,68 @@ def test_fix_c24_import_tables_removed_or_consumed():
     raise AssertionError(
         "_import_tables still present in GoParser; expected removal (no consumer)"
     )
+
+
+def test_fix_c14_regex_fallback_aliased_single_line_import(tmp_path):
+    """C14: aliased / blank / dot single-line imports must be captured by regex fallback."""
+    src = tmp_path / "main.go"
+    src.write_text(
+        'package main\n'
+        'import svc "example.com/svc"\n'
+        'import _ "github.com/lib/pq"\n'
+        'import . "fmt"\n'
+        'func main() {}\n',
+        encoding="utf-8",
+    )
+    p = GoParser()
+    # Force regex path
+    p._initialized = True
+    p._parser = None
+    _, refs = p.parse_file(src, tmp_path)
+    paths = {r.to_external for r in refs if r.kind == "import"}
+    assert "example.com/svc" in paths, f"aliased import missing: {paths}"
+    assert "github.com/lib/pq" in paths, f"blank import missing: {paths}"
+    assert "fmt" in paths, f"dot import missing: {paths}"
+
+
+def test_fix_c15_regex_fallback_emits_signature(tmp_path):
+    """C15: regex-fallback Symbols must have a non-empty signature so render_l2
+    doesn't produce blank `### ` headers."""
+    src = tmp_path / "x.go"
+    src.write_text(
+        "package x\n"
+        "type Foo struct{}\n"
+        "type Bar interface{}\n"
+        "func Baz() {}\n"
+        "func (f Foo) Quux() {}\n",
+        encoding="utf-8",
+    )
+    p = GoParser()
+    p._initialized = True
+    p._parser = None
+    syms, _ = p.parse_file(src, tmp_path)
+    for s in syms:
+        assert s.signature != "", \
+            f"Symbol {s.id} (kind={s.kind}) has empty signature in regex fallback"
+
+
+def test_fix_c20_regex_import_block_comment_with_paren_does_not_truncate(tmp_path):
+    """C20: a `)` inside a `// comment` within an import block must not
+    prematurely terminate the regex match."""
+    src = tmp_path / "x.go"
+    src.write_text(
+        'package x\n'
+        'import (\n'
+        '    "fmt"  // see issue ) here\n'
+        '    "os"\n'
+        ')\n'
+        'func main() {}\n',
+        encoding="utf-8",
+    )
+    p = GoParser()
+    p._initialized = True
+    p._parser = None
+    _, refs = p.parse_file(src, tmp_path)
+    paths = {r.to_external for r in refs if r.kind == "import"}
+    assert "fmt" in paths
+    assert "os" in paths, f"`os` import dropped by comment-) bug; got {paths}"
