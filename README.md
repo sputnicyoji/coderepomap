@@ -118,9 +118,13 @@ See [docs/lang-csharp.md](docs/lang-csharp.md) and [docs/lang-lua.md](docs/lang-
 | Command | Flags | Description |
 |---|---|---|
 | `repomap init` | `--lang csharp\|lua`, `--preset unity\|generic`, `--force` | Write `.repomap/config.yaml` |
-| `repomap generate` | `--verbose`, `--notify` | Parse sources, write L1/L2/L3/meta |
+| `repomap generate` | `--verbose`, `--notify`, `--config <path>` | Parse sources, write L1/L2/L3/meta |
 | `repomap status` | — | Show last-run stats + registered language parsers |
 | `repomap hooks` | `--install` (default), `--uninstall`, `--with-notify` | Manage git `post-checkout` / `post-merge` regeneration |
+
+## Claude Code skill
+
+`skills/repomap/` ships a [Claude Code](https://claude.com/claude-code) skill that drives this CLI from natural-language prompts ("generate code map", "扫一下代码结构 / 生成 repomap"). Install per [skills/README.md](skills/README.md) and the skill auto-detects C# / Lua / mixed projects, runs `python -m coderepomap generate`, and summarizes the result.
 
 `python -m coderepomap` and `repomap` are interchangeable.
 

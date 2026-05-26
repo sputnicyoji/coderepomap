@@ -118,9 +118,13 @@ resolved 边进 PageRank 图; unresolved 在 L3 **External References** 章节. 
 | 命令 | 参数 | 说明 |
 |---|---|---|
 | `repomap init` | `--lang csharp\|lua`, `--preset unity\|generic`, `--force` | 写入 `.repomap/config.yaml` |
-| `repomap generate` | `--verbose`, `--notify` | 解析源码, 写出 L1/L2/L3/meta |
+| `repomap generate` | `--verbose`, `--notify`, `--config <path>` | 解析源码, 写出 L1/L2/L3/meta |
 | `repomap status` | — | 显示上次运行的统计与已注册解析器 |
 | `repomap hooks` | `--install` (默认), `--uninstall`, `--with-notify` | 管理 git `post-checkout` / `post-merge` 钩子 |
+
+## Claude Code skill
+
+`skills/repomap/` 提供一个 [Claude Code](https://claude.com/claude-code) skill, 把这个 CLI 包装为自然语言入口 ("生成 repomap" / "扫一下代码结构" / "generate code map" 都触发). 安装方式见 [skills/README.md](skills/README.md). skill 自动探测 C# / Lua / 混合项目, 运行 `python -m coderepomap generate`, 并汇总结果.
 
 `python -m coderepomap` 与 `repomap` 等价.
 

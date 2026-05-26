@@ -118,9 +118,13 @@ resolved エッジは PageRank グラフに入ります。unresolved は L3 の 
 | コマンド | フラグ | 説明 |
 |---|---|---|
 | `repomap init` | `--lang csharp\|lua`, `--preset unity\|generic`, `--force` | `.repomap/config.yaml` を生成 |
-| `repomap generate` | `--verbose`, `--notify` | ソースを解析し L1/L2/L3/meta を出力 |
+| `repomap generate` | `--verbose`, `--notify`, `--config <path>` | ソースを解析し L1/L2/L3/meta を出力 |
 | `repomap status` | — | 最終実行の統計と登録済みパーサーを表示 |
 | `repomap hooks` | `--install` (デフォルト), `--uninstall`, `--with-notify` | git `post-checkout` / `post-merge` フックの管理 |
+
+## Claude Code skill
+
+`skills/repomap/` には、この CLI を自然言語プロンプトから駆動する [Claude Code](https://claude.com/claude-code) skill が含まれています ("generate code map" / "扫一下代码结构" / "コードマップを生成" などで起動). インストール方法は [skills/README.md](skills/README.md) を参照. skill は C# / Lua / 混合プロジェクトを自動検出し、`python -m coderepomap generate` を実行して結果を要約します.
 
 `python -m coderepomap` と `repomap` は等価です。
 
