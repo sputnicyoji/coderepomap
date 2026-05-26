@@ -86,6 +86,13 @@ class LanguageParser(ABC):
     default_excludes: List[str] = []
     default_boost_patterns: List[dict] = []
     default_categories: dict = {}
+    graph_node_kinds: "List[str] | None" = None
+    """Symbol.kind values this language wants in the PageRank graph.
+
+    `None` keeps v0.1.0 behavior (only `class`). Subclasses that emit non-class
+    entry symbols (Go packages, interfaces, functions; future languages) override
+    with an explicit list. The generator collects the union across active parsers.
+    """
 
     @abstractmethod
     def parse_file(

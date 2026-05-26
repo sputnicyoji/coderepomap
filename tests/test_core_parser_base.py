@@ -218,3 +218,24 @@ def test_registry_duplicate_register_different_class_raises():
     finally:
         registry.PARSERS.clear()
         registry.PARSERS.update(snapshot)
+
+
+def test_language_parser_default_graph_node_kinds_is_none():
+    """Default keeps v0.1.0 class-only graph behavior; subclasses opt into widening."""
+    from coderepomap.core.parser_base import LanguageParser
+
+    assert LanguageParser.graph_node_kinds is None
+
+
+def test_language_parser_subclass_can_set_graph_node_kinds():
+    from coderepomap.core.parser_base import LanguageParser
+
+    class _Probe(LanguageParser):
+        lang = "probe"
+        file_extensions = [".probe"]
+        graph_node_kinds = ["class", "function"]
+
+        def parse_file(self, path, base):
+            return [], []
+
+    assert _Probe.graph_node_kinds == ["class", "function"]
