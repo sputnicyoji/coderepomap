@@ -209,7 +209,50 @@ class GoParser(LanguageParser):
                 },
             ))
 
+        for child in root.children:
+            if child.type == "function_declaration":
+                self._handle_function_decl(
+                    child, content_bytes, rel, module_path, rel_dir, symbols, references,
+                )
+
         return symbols, references
+
+    def _handle_function_decl(
+        self, node, src_bytes, rel, module_path, rel_dir, symbols, references,
+    ):
+        name_node = None
+        for c in node.children:
+            if c.type == "identifier":
+                name_node = c
+                break
+        if name_node is None:
+            return
+        name = self._text(name_node, src_bytes)
+        line = self._line(node)
+
+        type_params: List[str] = []
+        for c in node.children:
+            if c.type == "type_parameter_list":
+                for tp in c.children:
+                    if tp.type == "type_parameter_declaration":
+                        ident_node = next((x for x in tp.children if x.type == "identifier"), None)
+                        if ident_node is not None:
+                            type_params.append(self._text(ident_node, src_bytes))
+
+        symbols.append(Symbol(
+            id=ident.go_function_id(module_path, rel_dir, name),
+            name=name,
+            fqn=ident.go_function_id(module_path, rel_dir, name)[len("go:"):],
+            kind="function",
+            file=rel,
+            line=line,
+            container=ident.go_package_id(module_path, rel_dir),
+            lang="go",
+            lang_meta={
+                "exported": self._is_exported(name),
+                "generic_params": type_params,
+            },
+        ))
 
     # --- regex fallback (filled in by Task 15) ------------------------------
 

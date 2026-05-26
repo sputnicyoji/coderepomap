@@ -69,3 +69,16 @@ def test_package_lang_meta_records_clause_name(parsed):
     pkg = next(s for s in syms if s.kind == "package")
     assert pkg.lang_meta.get("package_name") == "service"
     assert pkg.lang_meta.get("import_path") == "example.com/myapp/pkg/service"
+
+
+def test_function_id_and_kind(parsed):
+    syms, _ = parsed["pkg/service/service.go"]
+    funcs = [s for s in syms if s.kind == "function"]
+    func_ids = {s.id for s in funcs}
+    assert "go:example.com/myapp/pkg/service.NewService" in func_ids
+
+
+def test_function_exported_flag(parsed):
+    syms, _ = parsed["pkg/service/service.go"]
+    new_service = next(s for s in syms if s.id == "go:example.com/myapp/pkg/service.NewService")
+    assert new_service.lang_meta.get("exported") is True
