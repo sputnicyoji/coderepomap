@@ -204,6 +204,7 @@ class GoParser(LanguageParser):
                 kind="package",
                 file=rel,
                 line=1,
+                signature=f"package {display_name}",
                 lang="go",
                 lang_meta={
                     "package_name": package_name,
@@ -348,6 +349,7 @@ class GoParser(LanguageParser):
         if name_node is None:
             return
         name = self._text(name_node, src_bytes)
+        recv_marker = f"*{recv_type}" if recv_kind == "ptr" else recv_type
         symbols.append(Symbol(
             id=ident.go_method_id(module_path, rel_dir, recv_type, name),
             name=name,
@@ -355,6 +357,7 @@ class GoParser(LanguageParser):
             kind="method",
             file=rel,
             line=self._line(node),
+            signature=f"func ({recv_marker}) {name}(...)",
             container=ident.go_package_id(module_path, rel_dir),
             parent=recv_type,
             lang="go",
@@ -407,6 +410,8 @@ class GoParser(LanguageParser):
                     break
 
             kind = "interface" if (inner is not None and inner.type == "interface_type") else "class"
+            kw = "interface" if kind == "interface" else "struct"
+            gen_str = "[" + ", ".join(type_params) + "]" if type_params else ""
 
             symbols.append(Symbol(
                 id=ident.go_type_id(module_path, rel_dir, name),
@@ -415,6 +420,7 @@ class GoParser(LanguageParser):
                 kind=kind,
                 file=rel,
                 line=line,
+                signature=f"type {name}{gen_str} {kw}",
                 container=ident.go_package_id(module_path, rel_dir),
                 lang="go",
                 lang_meta={
@@ -520,6 +526,7 @@ class GoParser(LanguageParser):
             kind="function",
             file=rel,
             line=line,
+            signature=f"func {name}{'[' + ', '.join(type_params) + ']' if type_params else ''}(...)",
             container=ident.go_package_id(module_path, rel_dir),
             lang="go",
             lang_meta={
