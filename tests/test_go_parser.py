@@ -300,3 +300,71 @@ def test_module_path_resolved_for_subdir(tmp_path):
     p = GoParser()
     syms, _ = p.parse_file(sub / "a.go", tmp_path)
     assert any(s.kind == "class" and s.id == "go:example.com/x/inner.T" for s in syms)
+
+
+def test_fix_c13_generic_receiver_method_extracted(tmp_path):
+    """C13: methods on generic receivers `func (s *Service[T]) Run()` must be emitted.
+
+    Previously the receiver-type extraction only handled `type_identifier` and
+    `pointer_type(type_identifier)`, silently dropping methods on generic
+    types via the `if not recv_type: return` guard.
+    """
+    src_root = tmp_path
+    (src_root / "go.mod").write_text("module example.com/x\n", encoding="utf-8")
+    sub = src_root / "pkg"
+    sub.mkdir()
+    (sub / "g.go").write_text(
+        "package pkg\n"
+        "type Service[T any] struct{ Value T }\n"
+        "func (s *Service[T]) Run() error { return nil }\n"
+        "func (s Service[T]) Get() T { return s.Value }\n",
+        encoding="utf-8",
+    )
+    p = GoParser()
+    syms, _ = p.parse_file(sub / "g.go", src_root)
+    methods = [s for s in syms if s.kind == "method"]
+    method_ids = {s.id for s in methods}
+    assert "go:example.com/x/pkg.Service.Run" in method_ids, \
+        f"Run method on *Service[T] missing; got {method_ids}"
+    assert "go:example.com/x/pkg.Service.Get" in method_ids, \
+        f"Get method on Service[T] missing; got {method_ids}"
+
+
+def test_fix_c16_callback_parameter_not_emitted_as_call(tmp_path):
+    """C16: a parameter-name call `cb()` inside a function body must NOT emit a
+    spurious same-package call Reference. Parameters need to join locals_set."""
+    src_root = tmp_path
+    (src_root / "go.mod").write_text("module example.com/x\n", encoding="utf-8")
+    sub = src_root / "pkg"
+    sub.mkdir()
+    (sub / "apply.go").write_text(
+        "package pkg\n"
+        "func Apply(cb func()) { cb() }\n",
+        encoding="utf-8",
+    )
+    p = GoParser()
+    _, refs = p.parse_file(sub / "apply.go", src_root)
+    # No call ref should target a same-package symbol named `cb` — `cb` is a parameter.
+    bad = [r for r in refs if r.kind == "call" and r.to_external == "cb"]
+    assert bad == [], f"Spurious parameter-call ref emitted: {bad}"
+
+
+def test_fix_c19_deep_expression_does_not_recursion_error(tmp_path):
+    """C19: a deeply-nested Go AST (long binary chain) must not crash with
+    RecursionError. The walker should either be iterative or handle the
+    recursion limit gracefully via a try/except + regex fallback."""
+    src_root = tmp_path
+    (src_root / "go.mod").write_text("module example.com/x\n", encoding="utf-8")
+    sub = src_root / "pkg"
+    sub.mkdir()
+    # 2000 terms — comfortably above Python's default ~1000 recursion limit.
+    expr = " + ".join(["1"] * 2000)
+    (sub / "deep.go").write_text(
+        f"package pkg\nfunc Big() int {{ return {expr} }}\n",
+        encoding="utf-8",
+    )
+    p = GoParser()
+    # Must not raise — if RecursionError leaks, the whole generator run dies.
+    syms, _ = p.parse_file(sub / "deep.go", src_root)
+    # And the function symbol must still be emitted.
+    assert any(s.kind == "function" and s.name == "Big" for s in syms)

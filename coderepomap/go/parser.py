@@ -334,14 +334,11 @@ class GoParser(LanguageParser):
         for c in recv_decl.children:
             if c.type == "pointer_type":
                 recv_kind = "ptr"
-                inner = next(
-                    (x for x in c.children if x.type == "type_identifier"),
-                    None,
-                )
-                if inner is not None:
-                    recv_type = self._text(inner, src_bytes)
-            elif c.type == "type_identifier":
-                recv_type = self._text(c, src_bytes)
+                recv_type = self._extract_named_type(c, src_bytes)
+            elif c.type in ("type_identifier", "generic_type"):
+                recv_type = self._extract_named_type(c, src_bytes)
+            if recv_type:
+                break
         if not recv_type:
             return
 
@@ -369,9 +366,16 @@ class GoParser(LanguageParser):
 
         body = next((c for c in node.children if c.type == "block"), None)
         if body is not None:
+            # Method receiver + parameters are locals; seed them so callable
+            # parameters don't emit spurious project refs (C16).
+            param_lists = [c for c in node.children if c.type == "parameter_list"]
+            params: set = set()
+            for pl in param_lists:
+                params |= self._collect_parameter_names(pl, src_bytes)
             self._walk_body(
                 body, src_bytes, rel, module_path, rel_dir,
                 imports=imports, symbols=symbols, references=references,
+                params=params,
             )
 
     def _handle_type_decl(
@@ -537,9 +541,17 @@ class GoParser(LanguageParser):
 
         body = next((c for c in node.children if c.type == "block"), None)
         if body is not None:
+            # Function parameters are locals — seed locals_set so callable-
+            # parameter calls aren't emitted as same-package refs (C16).
+            param_list = next(
+                (c for c in node.children if c.type == "parameter_list"),
+                None,
+            )
+            params = self._collect_parameter_names(param_list, src_bytes)
             self._walk_body(
                 body, src_bytes, rel, module_path, rel_dir,
                 imports=imports, symbols=symbols, references=references,
+                params=params,
             )
 
     # --- regex fallback (filled in by Task 15) ------------------------------
@@ -663,6 +675,52 @@ class GoParser(LanguageParser):
     def _is_exported(name: str) -> bool:
         return bool(name) and name[0].isupper()
 
+    @classmethod
+    def _extract_named_type(cls, node, src_bytes: bytes) -> str:
+        """Return the named type a receiver/embed/composite-literal points at.
+
+        Handles `type_identifier` (Foo), `generic_type` (Foo[T]; first child is
+        the type name), and `pointer_type` wrapping either of those. Returns
+        "" if no named type is reachable.
+        """
+        if node is None:
+            return ""
+        if node.type == "type_identifier":
+            return cls._text(node, src_bytes)
+        if node.type == "generic_type":
+            # generic_type children: type_identifier, type_arguments
+            inner = next(
+                (x for x in node.children if x.type == "type_identifier"),
+                None,
+            )
+            if inner is not None:
+                return cls._text(inner, src_bytes)
+            return ""
+        if node.type == "pointer_type":
+            for c in node.children:
+                if c.type in ("type_identifier", "generic_type"):
+                    return cls._extract_named_type(c, src_bytes)
+        return ""
+
+    @classmethod
+    def _collect_parameter_names(cls, parameter_list_node, src_bytes: bytes) -> set:
+        """Return the set of identifier names declared in a parameter_list.
+
+        Used by the body walker to suppress callable-parameter false positives
+        (e.g. `func Apply(cb func()) { cb() }` — `cb` is a local, not a
+        same-package function reference).
+        """
+        names: set = set()
+        if parameter_list_node is None:
+            return names
+        for decl in parameter_list_node.children:
+            if decl.type != "parameter_declaration":
+                continue
+            for c in decl.children:
+                if c.type == "identifier":
+                    names.add(cls._text(c, src_bytes))
+        return names
+
     # --- body walker --------------------------------------------------------
 
     _GO_BUILTINS = frozenset({
@@ -676,14 +734,29 @@ class GoParser(LanguageParser):
 
     def _walk_body(
         self, node, src_bytes, rel, module_path, rel_dir, *,
-        imports, symbols, references,
+        imports, symbols, references, params=None,
     ):
-        locals_set: set = set()
-        self._walk_node(
-            node, src_bytes, rel, module_path, rel_dir,
-            imports=imports, locals_set=locals_set,
-            symbols=symbols, references=references,
-        )
+        # Seed locals_set with parameter names so callable parameters like
+        # `func Apply(cb func()) { cb() }` are not emitted as spurious
+        # same-package function refs (C16).
+        locals_set: set = set(params) if params else set()
+        try:
+            self._walk_node(
+                node, src_bytes, rel, module_path, rel_dir,
+                imports=imports, locals_set=locals_set,
+                symbols=symbols, references=references,
+            )
+        except RecursionError:
+            # Deeply-nested ASTs (long binary chains, deeply nested literals)
+            # can blow Python's default recursion limit. The function symbol
+            # itself was already emitted by the caller; we just give up on
+            # in-body references for this one body. Logged once per file to
+            # surface the degradation rather than silently swallow.
+            print(
+                f"Warning: GoParser body walker hit RecursionError on {rel}; "
+                f"skipping in-body reference extraction for this function.",
+                file=sys.stderr,
+            )
 
     def _walk_node(
         self, node, src_bytes, rel, module_path, rel_dir, *,
