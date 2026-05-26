@@ -388,23 +388,178 @@ def test_render_l1_go_uses_entry_symbol_wording():
 
 
 def test_render_l2_go_drops_class_only_filter_when_widened():
+    """L2 currently skips any non-class entry. When widened (Go's `package`
+    sentinel present in the module), packages/interfaces/functions with a
+    signature must also be rendered."""
     from coderepomap.core.parser_base import Symbol
     from coderepomap.core.renderer import render_l2
     from coderepomap.core.ranker import PageRankRanker
 
     syms = [
+        # Go `package` is the structural sentinel that flips widened mode.
+        Symbol(id="go:m/pkg/service", name="service",
+               fqn="m/pkg/service", kind="package",
+               signature="package service",
+               file="pkg/service/service.go", line=1, lang="go"),
         Symbol(id="go:m/pkg/service.Runner", name="Runner",
                fqn="m/pkg/service.Runner", kind="interface",
                signature="interface Runner",
                file="pkg/service/service.go", line=3, lang="go"),
     ]
     r = PageRankRanker()
-    r.add_symbol("go:m/pkg/service.Runner", file="pkg/service/service.go",
-                 kind="interface", label="Runner", fqn="m/pkg/service.Runner",
-                 lang="go")
+    for s in syms:
+        r.add_symbol(s.id, file=s.file, kind=s.kind, label=s.name,
+                     fqn=s.fqn, lang=s.lang)
     out = render_l2(
         syms, r,
         {"tokens": {"l2_signatures": 4000, "encoding": "cl100k_base"}},
         project_name="P",
     )
     assert "interface Runner" in out
+
+
+def test_fix_c12_build_module_stats_skips_non_entry_kind_files():
+    """C12: a C# file containing only an enum (no class) must not create a module entry."""
+    from coderepomap.core.parser_base import Symbol
+    from coderepomap.core.renderer import build_module_stats
+
+    syms = [
+        Symbol(id="csharp:Enums.Status", name="Status", fqn="Enums.Status",
+               kind="enum", file="Enums/Status.cs", line=1, lang="csharp"),
+    ]
+    stats = build_module_stats(syms)
+    assert "Enums" not in stats
+
+
+def test_fix_c3_widened_wording_is_per_module():
+    """C3: in multi-lang csharp+go, C# modules keep `(N classes)` wording while Go modules use `(N entry symbols)`."""
+    from coderepomap.core.parser_base import Symbol
+    from coderepomap.core.renderer import build_module_stats, render_l1
+    from coderepomap.core.ranker import PageRankRanker
+
+    syms = [
+        Symbol(id="csharp:CsMod.Foo", name="Foo", fqn="CsMod.Foo", kind="class",
+               file="CsMod/Foo.cs", line=1, lang="csharp"),
+        Symbol(id="go:m/pkg/svc", name="svc", fqn="m/pkg/svc", kind="package",
+               file="pkg/svc/svc.go", line=1, lang="go"),
+        Symbol(id="go:m/pkg/svc.Foo", name="Foo", fqn="m/pkg/svc.Foo", kind="class",
+               file="pkg/svc/svc.go", line=3, lang="go"),
+    ]
+    r = PageRankRanker()
+    for s in syms:
+        r.add_symbol(s.id, file=s.file, kind=s.kind, label=s.name, fqn=s.fqn, lang=s.lang)
+    out = render_l1(
+        syms, r, build_module_stats(syms),
+        {"tokens": {"l1_skeleton": 4000, "encoding": "cl100k_base"},
+         "categories": {"Other": {"patterns": []}}},
+        project_name="P", git_commit="", today_yyyy_mm_dd="2026-05-26",
+    )
+    # C# module keeps class wording
+    assert "- CsMod/ (1 classes)" in out
+    # Go module gets entry-symbols wording
+    assert "(2 entry symbols)" in out or "(2 entry symbol" in out
+
+
+def test_fix_c8_l1_column_header_switches_with_widened():
+    """C8: when widened (any package present), the L1 table column header must say 'Entry Symbol' not 'Entry Class'."""
+    from coderepomap.core.parser_base import Symbol
+    from coderepomap.core.renderer import build_module_stats, render_l1
+    from coderepomap.core.ranker import PageRankRanker
+
+    syms = [
+        Symbol(id="go:m/pkg", name="pkg", fqn="m/pkg", kind="package",
+               file="pkg/svc.go", line=1, lang="go"),
+        Symbol(id="go:m/pkg.Svc", name="Svc", fqn="m/pkg.Svc", kind="class",
+               file="pkg/svc.go", line=3, lang="go"),
+    ]
+    r = PageRankRanker()
+    for s in syms:
+        r.add_symbol(s.id, file=s.file, kind=s.kind, label=s.name, fqn=s.fqn, lang=s.lang)
+    out = render_l1(
+        syms, r, build_module_stats(syms),
+        {"tokens": {"l1_skeleton": 4000, "encoding": "cl100k_base"},
+         "categories": {"Other": {"patterns": []}}},
+        project_name="P", git_commit="", today_yyyy_mm_dd="2026-05-26",
+    )
+    assert "Entry Symbol" in out
+    assert "Entry Class |" not in out
+
+
+def test_fix_c9_l2_module_header_widened_wording():
+    """C9: L2 module header must say `(N entry symbols)` when module is widened
+    (Go's `package` sentinel present)."""
+    from coderepomap.core.parser_base import Symbol
+    from coderepomap.core.renderer import render_l2
+    from coderepomap.core.ranker import PageRankRanker
+
+    syms = [
+        Symbol(id="go:pkg", name="pkg", fqn="pkg",
+               kind="package", signature="package pkg",
+               file="pkg/x.go", line=1, lang="go"),
+        Symbol(id="go:pkg.Runner", name="Runner", fqn="pkg.Runner",
+               kind="interface", signature="type Runner interface",
+               file="pkg/x.go", line=3, lang="go"),
+    ]
+    r = PageRankRanker()
+    for s in syms:
+        r.add_symbol(s.id, file=s.file, kind=s.kind, label=s.name,
+                     fqn=s.fqn, lang=s.lang)
+    out = render_l2(
+        syms, r,
+        {"tokens": {"l2_signatures": 4000, "encoding": "cl100k_base"}},
+        project_name="P",
+    )
+    assert "entry symbols" in out or "entry symbol" in out
+    assert "classes" not in out.split("##")[1]  # module header line should not say classes
+
+
+def test_fix_c2_render_l2_csharp_only_keeps_class_filter():
+    """C2: when no package symbol present (pure C# or C#-with-interfaces), L2 must drop non-class entries to preserve v0.1.0 baseline."""
+    from coderepomap.core.parser_base import Symbol
+    from coderepomap.core.renderer import render_l2
+    from coderepomap.core.ranker import PageRankRanker
+
+    syms = [
+        Symbol(id="csharp:A.Foo", name="Foo", fqn="A.Foo", kind="class",
+               signature="public class Foo", file="A/Foo.cs", line=1, lang="csharp"),
+        Symbol(id="csharp:A.IFoo", name="IFoo", fqn="A.IFoo", kind="interface",
+               signature="public interface IFoo", file="A/Foo.cs", line=10, lang="csharp"),
+    ]
+    r = PageRankRanker()
+    for s in syms:
+        r.add_symbol(s.id, file=s.file, kind=s.kind, label=s.name, fqn=s.fqn, lang=s.lang)
+    out = render_l2(
+        syms, r,
+        {"tokens": {"l2_signatures": 4000, "encoding": "cl100k_base"}},
+        project_name="P",
+    )
+    # v0.1.0 byte-compat: C# interfaces should NOT appear in L2 when no Go package context
+    assert "public interface IFoo" not in out
+    assert "public class Foo" in out
+
+
+def test_fix_c4_meta_top_modules_uses_entries_count():
+    """C4: render_meta.top_modules must use symbol_count / entries (not class_count) when any module is widened."""
+    from coderepomap.core.parser_base import Symbol
+    from coderepomap.core.renderer import build_module_stats, render_meta
+    from coderepomap.core.ranker import PageRankRanker
+
+    syms = [
+        Symbol(id="go:m/handler", name="handler", fqn="m/handler",
+               kind="package", file="handler/h.go", line=1, lang="go"),
+        Symbol(id="go:m/handler.New", name="New", fqn="m/handler.New",
+               kind="function", file="handler/h.go", line=3, lang="go"),
+        Symbol(id="go:m/handler.Run", name="Run", fqn="m/handler.Run",
+               kind="function", file="handler/h.go", line=5, lang="go"),
+    ]
+    r = PageRankRanker()
+    for s in syms:
+        r.add_symbol(s.id, file=s.file, kind=s.kind, label=s.name, fqn=s.fqn, lang=s.lang)
+    meta = render_meta(syms, [], r, build_module_stats(syms),
+                       project_name="P", source_path=".", git_commit="",
+                       git_branch="", generated_at_iso="")
+    top = meta["top_modules"]
+    assert any(t["name"] == "handler" for t in top)
+    # When widened, the per-row count must reflect entry symbols (3 here), not class_count (0)
+    handler_row = next(t for t in top if t["name"] == "handler")
+    assert handler_row.get("entries", handler_row.get("classes")) == 3

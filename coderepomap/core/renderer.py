@@ -54,18 +54,61 @@ def _module_from_file(file_path: str) -> str:
 _RENDERER_ENTRY_KINDS = frozenset({"class", "interface", "package", "function"})
 
 
+def _build_top_modules(modules: Dict[str, dict]) -> list:
+    """Top-10 modules sorted by their entry-symbol weight.
+
+    For modules with non-class entry symbols (Go: package/interface/function),
+    ranks by `symbol_count` and emits an `entries` field. For pure-class
+    modules (C#-only), preserves the v0.1.0 contract: ranks by `class_count`
+    and emits only a `classes` field. Mixed runs include both fields so
+    consumers can pick what they need without breaking on missing keys.
+    """
+    any_widened = any(info.get("widened", False) for info in modules.values())
+    if any_widened:
+        ranked = sorted(
+            modules.items(),
+            key=lambda x: x[1].get("symbol_count", x[1].get("class_count", 0)),
+            reverse=True,
+        )[:10]
+        return [
+            {
+                "name": m,
+                "classes": info["class_count"],
+                "entries": info.get("symbol_count", info["class_count"]),
+            }
+            for m, info in ranked
+        ]
+    # Pure-class (v0.1.0 byte-compat): sort by class_count, emit only `classes`.
+    ranked = sorted(
+        modules.items(), key=lambda x: x[1]["class_count"], reverse=True
+    )[:10]
+    return [{"name": m, "classes": info["class_count"]} for m, info in ranked]
+
+
 def build_module_stats(symbols: List[Symbol]) -> Dict[str, dict]:
     """Module-level statistics for the renderer.
+
+    Only symbols whose `kind` is in `_RENDERER_ENTRY_KINDS` create or
+    contribute to a module entry — a file containing only non-entry symbols
+    (e.g. a C# enum-only `.cs` file) does NOT produce a module entry, matching
+    v0.1.0 behavior.
 
     Each module dict carries:
       - `class_count` (legacy, v0.1.0 byte-compat): number of `kind=="class"` symbols
       - `classes`     (legacy): names of those class symbols
       - `symbol_count` (new): total entry symbols across the widened kind set
       - `entries`     (new): names of those entry symbols (in stable order)
-      - `file_count`  (legacy): number of distinct files in this module
+      - `widened`     (new): True iff this module has a `package` kind symbol
+                             (Go's structural sentinel; C# / Lua never emit it).
+                             C# modules with interfaces stay False to preserve
+                             v0.1.0 byte-equivalent L2 output.
+      - `file_count`  (legacy): number of distinct files in this module (only
+                             counts files that contribute at least one entry symbol)
     """
     modules: Dict[str, dict] = {}
     for sym in symbols:
+        if sym.kind not in _RENDERER_ENTRY_KINDS:
+            continue
         module = _module_from_file(sym.file)
         if module not in modules:
             modules[module] = {
@@ -73,16 +116,21 @@ def build_module_stats(symbols: List[Symbol]) -> Dict[str, dict]:
                 "classes": [],
                 "symbol_count": 0,
                 "entries": [],
+                "widened": False,
                 "files": set(),
             }
         info = modules[module]
         info["files"].add(sym.file)
+        info["symbol_count"] += 1
+        info["entries"].append(sym.name)
         if sym.kind == "class":
             info["class_count"] += 1
             info["classes"].append(sym.name)
-        if sym.kind in _RENDERER_ENTRY_KINDS:
-            info["symbol_count"] += 1
-            info["entries"].append(sym.name)
+        if sym.kind == "package":
+            # `package` kind is the structural sentinel: only Go emits it.
+            # Triggering widened on `package` keeps C#-with-interfaces output
+            # byte-equivalent to v0.1.0 while flipping wording for Go modules.
+            info["widened"] = True
     for m in modules.values():
         m["file_count"] = len(m["files"])
         del m["files"]
@@ -134,12 +182,12 @@ def render_l1(
     priority_modules = config.get("importance_boost", {}).get("priority_modules", []) or []
     cat_cfg = config.get("categories", {}) or {}
 
-    # Widened wording is triggered globally by presence of `package` kind
-    # symbols (Go emits these; C# / Lua do not). This keeps the v0.1.0 C#
-    # baseline byte-equivalent — a C# file with classes AND interfaces is
-    # still reported as "N classes" because there's no package symbol to
-    # flip the mode.
-    widened_mode = any(s.kind == "package" for s in symbols)
+    # Widened wording is decided per-module: a module that emits non-class
+    # entry symbols (Go's package/interface/function) is widened; pure-class
+    # modules (e.g. C#-only) stay legacy. Section/column headers flip to the
+    # widened form when ANY module is widened so the table is internally
+    # consistent.
+    any_widened = any(info.get("widened", False) for info in modules.values())
 
     for module, info in sorted_modules:
         rank = module_ranks.get(module, 0)
@@ -153,7 +201,7 @@ def render_l1(
         lines.append(f"### {cat_name}")
         for module, info, rank in sorted(mods, key=lambda x: x[2], reverse=True)[:10]:
             active = " [Active]" if module in priority_modules else ""
-            if widened_mode:
+            if info.get("widened", False):
                 lines.append(
                     f"- {module}/ ({info['symbol_count']} entry symbols){active}"
                 )
@@ -163,8 +211,11 @@ def render_l1(
                 )
         lines.append("")
 
-    lines.append("### Core Entry Symbols" if widened_mode else "### Core Entry Classes")
-    lines.append("| Module | Entry Class | Key Methods |")
+    lines.append("### Core Entry Symbols" if any_widened else "### Core Entry Classes")
+    if any_widened:
+        lines.append("| Module | Entry Symbol | Key Methods |")
+    else:
+        lines.append("| Module | Entry Class | Key Methods |")
     lines.append("|--------|-------------|-------------|")
 
     # Look up methods by (container, parent) match — not by bare label — to
@@ -225,17 +276,52 @@ def render_l2(
     sorted_modules = sorted(module_ranks.keys(), key=lambda x: module_ranks[x], reverse=True)
 
     syms_by_id = {s.id: s for s in symbols}
+    # Per-module widened mode: a module is widened iff it contains a Go
+    # `package` kind symbol (the only language-structural sentinel; C# / Lua
+    # never emit it). Pure-class modules (C#-only, even with interfaces) keep
+    # the v0.1.0 `(N classes)` wording and drop non-class entries.
+    module_widened: Dict[str, bool] = {}
+    for module, bucket in module_classes.items():
+        widened = False
+        for sid, _, _ in bucket:
+            sym = syms_by_id.get(sid)
+            if sym is not None and sym.kind == "package":
+                widened = True
+                break
+        module_widened[module] = widened
+
     for module in sorted_modules[:15]:
         classes = module_classes[module]
         total_rank = module_ranks[module]
-        lines.append(f"## {module} ({len(classes)} classes, rank: {total_rank:.2f})")
+        widened = module_widened.get(module, False)
+        # Count only the entries that will be rendered (matches the filter below)
+        if widened:
+            shown_count = sum(
+                1 for sid, _, _ in classes
+                if (sym := syms_by_id.get(sid)) is not None
+                and sym.kind in _RENDERER_ENTRY_KINDS
+            )
+            lines.append(f"## {module} ({shown_count} entry symbols, rank: {total_rank:.2f})")
+        else:
+            shown_count = sum(
+                1 for sid, _, _ in classes
+                if (sym := syms_by_id.get(sid)) is not None
+                and sym.kind == "class"
+            )
+            lines.append(f"## {module} ({shown_count} classes, rank: {total_rank:.2f})")
         lines.append("")
         for sid, rank, info in sorted(classes, key=lambda x: x[1], reverse=True)[:5]:
-            # Look up class symbol by id so same-named classes in different
-            # namespaces stay distinct.
             sym = syms_by_id.get(sid)
-            if sym is None or sym.kind not in _RENDERER_ENTRY_KINDS:
+            if sym is None:
                 continue
+            # v0.1.0 byte-compat: non-widened modules drop non-class entries
+            # (so a C# project's interfaces still don't appear in L2).
+            if widened:
+                if sym.kind not in _RENDERER_ENTRY_KINDS:
+                    continue
+            else:
+                if sym.kind != "class":
+                    continue
             lines.append(f"### {sym.signature}")
             methods = [
                 s for s in symbols
@@ -379,12 +465,7 @@ def render_meta(
             "reference_count": len(references),
             "module_count": len(modules),
         },
-        "top_modules": [
-            {"name": m, "classes": info["class_count"]}
-            for m, info in sorted(
-                modules.items(), key=lambda x: x[1]["class_count"], reverse=True
-            )[:10]
-        ],
+        "top_modules": _build_top_modules(modules),
         "ranker_stats": ranker.get_stats(),
     }
 
