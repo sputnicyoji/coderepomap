@@ -158,14 +158,23 @@ def _copy_template_with_lang(src: Path, dest: Path, lang: str) -> None:
 def cmd_generate(args):
     """Generate repo map"""
     project_root = Path.cwd()
-    config_path = project_root / '.repomap' / 'config.yaml'
 
-    # Also check for .json config
-    if not config_path.exists():
-        config_path = project_root / '.repomap' / 'config.json'
+    # --config <path> overrides the default discovery. Useful for projects
+    # that embed the config under a non-default path (e.g. existing X1-style
+    # `.claude/context/repomap-generator/config.yaml`).
+    custom_cfg = getattr(args, 'config', None)
+    if custom_cfg:
+        config_path = Path(custom_cfg)
+        if not config_path.is_absolute():
+            config_path = project_root / config_path
+    else:
+        config_path = project_root / '.repomap' / 'config.yaml'
+        # Also check for .json config
+        if not config_path.exists():
+            config_path = project_root / '.repomap' / 'config.json'
 
     if not config_path.exists():
-        print("Error: No configuration found. Run 'repomap init' first.")
+        print(f"Error: No configuration found at {config_path}. Run 'repomap init' first.")
         return 1
 
     # Load config
@@ -175,8 +184,10 @@ def cmd_generate(args):
         with open(config_path, 'r', encoding='utf-8') as f:
             config = json.load(f)
 
-    # Override output directory to .repomap/output
-    config['output']['directory'] = '.repomap/output'
+    # When using a custom config, RESPECT its output.directory setting; only
+    # override to the default when no custom config was supplied.
+    if not custom_cfg:
+        config['output']['directory'] = '.repomap/output'
 
     # Create generator and run
     try:
@@ -235,15 +246,32 @@ def _write_update_log(project_root: Path, results: dict):
 
     entry = f"[{timestamp}] {branch:20} | {commit} | {results['file_count']} files | {results['duration']:.1f}s\n"
 
+    # Ensure parent dir exists (custom-config projects may use a different
+    # output path and never create `.repomap/`). Write the log next to the
+    # configured output if `.repomap/` doesn't exist.
+    try:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        # Read-only or otherwise unwritable — silently skip the log; it's
+        # diagnostic-only, not load-bearing.
+        return
+
     # Append to log (keep last 50 entries)
     existing_lines = []
     if log_path.exists():
-        with open(log_path, 'r', encoding='utf-8') as f:
-            existing_lines = f.readlines()[-49:]
+        try:
+            with open(log_path, 'r', encoding='utf-8') as f:
+                existing_lines = f.readlines()[-49:]
+        except OSError:
+            existing_lines = []
 
-    with open(log_path, 'w', encoding='utf-8') as f:
-        f.writelines(existing_lines)
-        f.write(entry)
+    try:
+        with open(log_path, 'w', encoding='utf-8') as f:
+            f.writelines(existing_lines)
+            f.write(entry)
+    except OSError:
+        # Log write is best-effort; never fail the generate command over it.
+        pass
 
 
 def cmd_status(args):
@@ -565,6 +593,11 @@ Examples:
         '--notify', '-n',
         action='store_true',
         help='Send notification when complete'
+    )
+    gen_parser.add_argument(
+        '--config', '-c',
+        default=None,
+        help='Path to a config file (overrides the default .repomap/config.yaml discovery)'
     )
 
     # status command
