@@ -126,6 +126,49 @@ def lua_field_id(module_id: str, table: str, field: str) -> str:
     return f"lua:{module_id}.{table}.{field}"
 
 
+# ----- Go -----
+
+def _go_body(module_path: str, rel_dir: str) -> str:
+    """Join module-path + rel-dir, normalize separators, tolerate empties."""
+    rel = rel_dir.replace("\\", "/").strip("/")
+    mp = module_path.strip("/")
+    if mp and rel:
+        return f"{mp}/{rel}"
+    return mp or rel
+
+
+def go_package_id(module_path: str, rel_dir: str) -> str:
+    """Id for a Go package symbol (one per directory).
+
+    `module_path` comes from `go.mod`; empty means no module declared, the id
+    falls back to the source-root-relative directory. `rel_dir` is normalized
+    to forward slashes so Windows paths produce stable ids.
+    """
+    body = _go_body(module_path, rel_dir)
+    return f"go:{body}"
+
+
+def go_function_id(module_path: str, rel_dir: str, name: str) -> str:
+    """Id for a Go top-level function: `<pkg-id>.<Name>`."""
+    return f"{go_package_id(module_path, rel_dir)}.{name}"
+
+
+def go_type_id(module_path: str, rel_dir: str, name: str) -> str:
+    """Id for a Go named type (struct / interface / alias): `<pkg-id>.<Type>`."""
+    return f"{go_package_id(module_path, rel_dir)}.{name}"
+
+
+def go_method_id(module_path: str, rel_dir: str, type_name: str, method: str) -> str:
+    """Id for a Go method. Pointer/value receivers produce the same id; the
+    distinction is recorded in `Symbol.lang_meta.receiver_kind`."""
+    return f"{go_package_id(module_path, rel_dir)}.{type_name}.{method}"
+
+
+def go_member_id(module_path: str, rel_dir: str, type_name: str, member: str) -> str:
+    """Id for a Go struct field or top-level const/var on a type."""
+    return f"{go_package_id(module_path, rel_dir)}.{type_name}.{member}"
+
+
 __all__ = [
     "csharp_type_id",
     "csharp_method_id",
@@ -135,4 +178,9 @@ __all__ = [
     "lua_function_id",
     "lua_method_id",
     "lua_field_id",
+    "go_package_id",
+    "go_function_id",
+    "go_type_id",
+    "go_method_id",
+    "go_member_id",
 ]

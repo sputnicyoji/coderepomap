@@ -239,3 +239,45 @@ def test_language_parser_subclass_can_set_graph_node_kinds():
             return [], []
 
     assert _Probe.graph_node_kinds == ["class", "function"]
+
+
+def test_go_package_id_with_module():
+    from coderepomap.core import identity as ident
+    assert ident.go_package_id("example.com/myapp", "pkg/service") == \
+        "go:example.com/myapp/pkg/service"
+
+
+def test_go_package_id_without_module():
+    from coderepomap.core import identity as ident
+    assert ident.go_package_id("", "pkg/service") == "go:pkg/service"
+
+
+def test_go_package_id_root_dir():
+    from coderepomap.core import identity as ident
+    assert ident.go_package_id("example.com/myapp", "") == "go:example.com/myapp"
+
+
+def test_go_package_id_normalizes_windows_separators():
+    from coderepomap.core import identity as ident
+    assert ident.go_package_id("example.com/myapp", "pkg\service") == \
+        "go:example.com/myapp/pkg/service"
+
+
+def test_go_function_id():
+    from coderepomap.core import identity as ident
+    assert ident.go_function_id("example.com/myapp", "pkg/service", "NewService") == \
+        "go:example.com/myapp/pkg/service.NewService"
+
+
+def test_go_type_id_and_method_id():
+    from coderepomap.core import identity as ident
+    assert ident.go_type_id("example.com/myapp", "pkg/service", "Service") == \
+        "go:example.com/myapp/pkg/service.Service"
+    assert ident.go_method_id("example.com/myapp", "pkg/service", "Service", "Run") == \
+        "go:example.com/myapp/pkg/service.Service.Run"
+
+
+def test_go_member_id_struct_field():
+    from coderepomap.core import identity as ident
+    assert ident.go_member_id("example.com/myapp", "pkg/service", "Service", "Name") == \
+        "go:example.com/myapp/pkg/service.Service.Name"
