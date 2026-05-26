@@ -540,7 +540,104 @@ class GoParser(LanguageParser):
     def _parse_with_regex(
         self, content: str, rel: str, module_path: str, rel_dir: str, package_id: str,
     ) -> Tuple[List[Symbol], List[Reference]]:
-        return [], []
+        """Conservative regex fallback when tree-sitter-go is unavailable.
+
+        Captures only the bare minimum for L1/L2 visibility: package, top-level
+        types (struct/interface), functions, methods, and imports as refs.
+        Calls, embeds, struct fields are NOT parsed in regex mode.
+        """
+        symbols: List[Symbol] = []
+        references: List[Reference] = []
+
+        m = re.search(r"^package\s+(\w+)", content, flags=re.MULTILINE)
+        package_name = m.group(1) if m else ""
+        if package_id not in self._parsed_packages:
+            self._parsed_packages.add(package_id)
+            display_name = package_name or (
+                package_id.rsplit("/", 1)[-1] if "/" in package_id
+                else package_id[len("go:"):]
+            )
+            symbols.append(Symbol(
+                id=package_id,
+                name=display_name,
+                fqn=package_id[len("go:"):],
+                kind="package",
+                file=rel, line=1, lang="go",
+                lang_meta={
+                    "package_name": package_name,
+                    "import_path": package_id[len("go:"):],
+                },
+            ))
+
+        for m in re.finditer(r"^type\s+(\w+)\s+struct\b", content, flags=re.MULTILINE):
+            name = m.group(1)
+            line = content[: m.start()].count("\n") + 1
+            symbols.append(Symbol(
+                id=ident.go_type_id(module_path, rel_dir, name),
+                name=name,
+                fqn=ident.go_type_id(module_path, rel_dir, name)[len("go:"):],
+                kind="class",
+                file=rel, line=line,
+                container=package_id, lang="go",
+                lang_meta={"exported": self._is_exported(name)},
+            ))
+        for m in re.finditer(r"^type\s+(\w+)\s+interface\b", content, flags=re.MULTILINE):
+            name = m.group(1)
+            line = content[: m.start()].count("\n") + 1
+            symbols.append(Symbol(
+                id=ident.go_type_id(module_path, rel_dir, name),
+                name=name,
+                fqn=ident.go_type_id(module_path, rel_dir, name)[len("go:"):],
+                kind="interface",
+                file=rel, line=line,
+                container=package_id, lang="go",
+                lang_meta={"exported": self._is_exported(name)},
+            ))
+
+        for m in re.finditer(r"^func\s+(\w+)\s*\(", content, flags=re.MULTILINE):
+            name = m.group(1)
+            line = content[: m.start()].count("\n") + 1
+            symbols.append(Symbol(
+                id=ident.go_function_id(module_path, rel_dir, name),
+                name=name,
+                fqn=ident.go_function_id(module_path, rel_dir, name)[len("go:"):],
+                kind="function",
+                file=rel, line=line,
+                container=package_id, lang="go",
+                lang_meta={"exported": self._is_exported(name)},
+            ))
+
+        for m in re.finditer(r"^func\s+\(\s*\w+\s+\*?(\w+)\s*\)\s+(\w+)\s*\(", content, flags=re.MULTILINE):
+            recv_type, name = m.group(1), m.group(2)
+            line = content[: m.start()].count("\n") + 1
+            symbols.append(Symbol(
+                id=ident.go_method_id(module_path, rel_dir, recv_type, name),
+                name=name,
+                fqn=ident.go_method_id(module_path, rel_dir, recv_type, name)[len("go:"):],
+                kind="method",
+                file=rel, line=line,
+                container=package_id, parent=recv_type, lang="go",
+                lang_meta={"exported": self._is_exported(name)},
+            ))
+
+        for m in re.finditer(r'^import\s+"([^"]+)"', content, flags=re.MULTILINE):
+            path = m.group(1)
+            line = content[: m.start()].count("\n") + 1
+            references.append(Reference(
+                from_id=package_id, to_id=f"go:{path}", to_external=path,
+                file=rel, line=line, kind="import", lang="go", resolved=False,
+            ))
+        for m in re.finditer(r'^import\s+\(([\s\S]*?)\)', content, flags=re.MULTILINE):
+            block_start = m.start(1)
+            for im in re.finditer(r'"([^"]+)"', m.group(1)):
+                path = im.group(1)
+                line = content[: block_start + im.start()].count("\n") + 1
+                references.append(Reference(
+                    from_id=package_id, to_id=f"go:{path}", to_external=path,
+                    file=rel, line=line, kind="import", lang="go", resolved=False,
+                ))
+
+        return symbols, references
 
     # --- AST helpers --------------------------------------------------------
 

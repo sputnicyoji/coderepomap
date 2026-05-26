@@ -242,3 +242,26 @@ def test_call_v2_resolves_through_default_selector(tmp_path):
     _, refs = p.parse_file(sub / "main.go", src_root)
     call = next(r for r in refs if r.kind == "call" and r.to_external == "bar.Use")
     assert call.to_id == "go:github.com/foo/bar/v2.Use"
+
+
+def test_regex_fallback_emits_minimum_symbols(tmp_path):
+    """Force-disable tree-sitter; regex still produces L1/L2 essentials."""
+    src = tmp_path / "main.go"
+    src.write_text(
+        "package main\n"
+        "type Foo struct{}\n"
+        "type Bar interface{}\n"
+        "func Baz() {}\n"
+        "func (f Foo) Quux() {}\n",
+        encoding="utf-8",
+    )
+    p = GoParser()
+    p._initialized = True
+    p._parser = None
+    syms, refs = p.parse_file(src, tmp_path)
+    kinds = {(s.kind, s.name) for s in syms}
+    assert ("class", "Foo") in kinds
+    assert ("interface", "Bar") in kinds
+    assert ("function", "Baz") in kinds
+    assert ("method", "Quux") in kinds
+    assert any(s.kind == "package" for s in syms)
