@@ -94,6 +94,22 @@ def discover(config: dict, project_root: Path) -> List[SourceFile]:
         has_lang = True
         config = {**config, "lang": "csharp"}
 
+    # Schema mismatch guards: silently falling back to defaults when the user
+    # mixed the two shapes (e.g. `lang:` + `sources:`) made roots collapse to
+    # cwd and exclude lists become no-ops. Fail loudly instead.
+    if has_lang and "sources" in config:
+        raise ValueError(
+            "config uses single-lang `lang:` but also defines plural `sources:`. "
+            "Either drop `sources:` and put settings under singular `source:`, "
+            "or switch to multi-lang shape (`langs: [csharp]` + `sources:`)."
+        )
+    if has_langs and "source" in config:
+        raise ValueError(
+            "config uses multi-lang `langs:` but also defines singular `source:`. "
+            "Either drop `source:` and put settings under plural `sources.<lang>:`, "
+            "or switch to single-lang shape (`lang: <lang>` + `source:`)."
+        )
+
     if has_lang:
         lang = config["lang"]
         src = config.get("source", {}) or {}

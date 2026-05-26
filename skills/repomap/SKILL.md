@@ -129,19 +129,91 @@ python -m coderepomap init --lang csharp --preset unity        # or other combos
 
 This writes `.repomap/config.yaml` from the bundled template.
 
-#### 2b — Multi-language (write config directly)
+> **Default `source.root_path`** in the bundled template is `.` (cwd) or a
+> conventional `Assets/Scripts`. If the real source tree lives elsewhere
+> (e.g. a Unity project nested under `client/Assets/X1/`), `init` is fine
+> as a starting point but you MUST edit `source.root_path` before
+> generating, or skip 2a and write the config directly via 2b.
 
-`repomap init` is single-lang. For C# + Lua mixed, write `.repomap/config.yaml` manually:
+#### 2b — Write config directly (any single-lang or multi-lang shape)
+
+`repomap init` ships a fixed template. Hand-write `.repomap/config.yaml`
+whenever:
+
+- the real source root is not under `cwd/Assets/Scripts`
+- you need precise `exclude_patterns` (third-party, generated, packages)
+- you're combining C# + Lua
+
+> [!IMPORTANT]
+> **Schema is shape-bound. Mixing single-lang and multi-lang field names
+> in the same config raises `ValueError` since v0.2.x.** Earlier versions
+> (and v0.2.0) silently fell back to defaults and scanned cwd. The two
+> shapes are NOT interchangeable.
+>
+> | Shape | Lang field | Source field |
+> |---|---|---|
+> | single-lang | `lang: csharp` | `source:` (singular) |
+> | multi-lang  | `langs: [csharp, lua]` | `sources:` (plural, keyed by lang) |
+>
+> **Forbidden mixes (each raises a ValueError):**
+>
+> | Wrong combo | Reason |
+> |---|---|
+> | `lang: csharp` + `sources:` | single-lang field paired with multi-lang container |
+> | `langs: [csharp]` + `source:` | multi-lang field paired with single-lang container |
+> | `lang:` + `langs:` together | conflicting language declarations |
+> | top-level YAML is a list / scalar / string | config must be a mapping |
+
+**Single-language template** (use this for pure C# or pure Lua projects):
 
 ```yaml
 project_name: "<repo name>"
-langs: [csharp, lua]
-sources:
+lang: csharp                          # singular
+source:                               # singular!
+  # Pick root_path so its IMMEDIATE children are what you want shown as
+  # modules — see the "Module name = path[0]" note below. For a Unity
+  # project with feature folders under e.g. Assets/Scripts/Gameplay/, the
+  # right root is "Assets/Scripts/Gameplay" (not "Assets/Scripts"), so
+  # each feature folder becomes a module instead of getting collapsed.
+  root_path: "Assets/Scripts"         # adapt to project — relative to cwd
+  exclude_patterns:
+    - "**/Editor/**"
+    - "**/Tests/**"
+    - "**/bin/**"
+    - "**/obj/**"
+tokens:
+  l1_skeleton: 1000
+  l2_signatures: 2000
+  l3_relations: 3000
+  encoding: cl100k_base
+pagerank:
+  alpha: 0.85
+  max_iter: 100
+output:
+  directory: ".repomap/output"
+  files:
+    skeleton: repomap-L1-skeleton.md
+    signatures: repomap-L2-signatures.md
+    relations: repomap-L3-relations.md
+    meta: repomap-meta.json
+importance_boost:
+  patterns: []
+  priority_modules: []
+categories:
+  Other: {patterns: []}
+```
+
+**Multi-language template** (C# + Lua coexist — e.g. xLua / sLua / ToLua):
+
+```yaml
+project_name: "<repo name>"
+langs: [csharp, lua]                  # plural
+sources:                              # plural, keyed by lang
   csharp:
-    root_path: "Assets/Scripts"     # adapt to project
+    root_path: "Assets/Scripts"       # adapt to project
     exclude_patterns: ["**/Editor/**", "**/Tests/**", "**/bin/**", "**/obj/**"]
   lua:
-    root_path: "Assets/LuaScripts"  # adapt to project
+    root_path: "Assets/LuaScripts"    # adapt to project
     exclude_patterns: ["**/test/**"]
 tokens:
   l1_skeleton: 1000
@@ -169,6 +241,19 @@ crosslang:
     - prefix: "CS."           # xLua default
     # - prefix: "UnityEngine."  # uncomment for sLua / ToLua
 ```
+
+> **Module name = `_module_from_file(file)`'s first path segment** (v0.1
+> compat behavior, hardcoded in `renderer.py`). The path is **relative to
+> `root_path`**, so if you want `RoguelikeTower` / `Battle` / `UI` to show
+> up as separate modules in L1, set `root_path` to the directory one level
+> above them (e.g. `client/Assets/X1/ScriptGame`). Setting `root_path` too
+> shallow (e.g. cwd) collapses everything into a single `client/` module
+> with `module_count: 1`.
+>
+> Similarly, `categories.<name>.patterns` is a **substring match against
+> the module name**, NOT a file glob. Patterns like `"**/RoguelikeTower/**"`
+> never match a module string like `"RoguelikeTower"`. Use bare names:
+> `categories: {Gameplay: {patterns: ["RoguelikeTower", "Battle"]}}`.
 
 #### 2c — Custom config path (existing projects with their own layout)
 

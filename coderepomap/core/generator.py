@@ -109,20 +109,65 @@ class RepoMapGenerator:
     @staticmethod
     def load_config(config_path: Path) -> dict:
         default = RepoMapGenerator._get_default_config()
+        user_loaded: dict = {}
         if HAS_YAML and config_path.exists():
-            try:
-                with open(config_path, "r", encoding="utf-8") as f:
-                    loaded = yaml.safe_load(f)
-                    if loaded:
-                        RepoMapGenerator._deep_merge(default, loaded)
-            except Exception as e:
-                print(f"Warning: Failed to load config: {e}")
+            with open(config_path, "r", encoding="utf-8") as f:
+                loaded = yaml.safe_load(f)
+            # Be strict about config shape. Silently returning defaults on a
+            # malformed yaml (list / scalar / parse error) was the upstream
+            # symptom that caused the silent fallback to cwd scan.
+            if loaded is None:
+                pass  # empty file is fine; use defaults
+            elif isinstance(loaded, dict):
+                user_loaded = loaded
+            else:
+                raise ValueError(
+                    f"config at {config_path} must be a YAML mapping at the "
+                    f"top level, got {type(loaded).__name__}"
+                )
 
-        # Resolve lang/langs ambiguity AFTER merge so user intent wins:
-        # if the loaded YAML set `langs`, drop any `lang` (whether from default
-        # or from the loaded dict itself).
-        if "langs" in default and "lang" in default:
-            del default["lang"]
+        # Validate schema BEFORE merging, against the user-set fields only —
+        # the default config always carries `source:` and that must not be
+        # mistaken for a user-set field when raising mismatch errors.
+        u_lang = "lang" in user_loaded
+        u_langs = "langs" in user_loaded
+        u_source = "source" in user_loaded
+        u_sources = "sources" in user_loaded
+        if u_lang and u_langs:
+            raise ValueError(
+                f"config at {config_path} sets both `lang:` and `langs:`; "
+                f"pick one (single-lang uses `lang:`+`source:`, multi-lang "
+                f"uses `langs:`+`sources:`)."
+            )
+        if u_lang and u_sources:
+            raise ValueError(
+                f"config at {config_path} uses single-lang `lang:` but also "
+                f"defines plural `sources:`. Either drop `sources:` and put "
+                f"settings under singular `source:`, or switch to multi-lang "
+                f"shape (`langs: [csharp]` + `sources:`)."
+            )
+        if u_langs and u_source:
+            raise ValueError(
+                f"config at {config_path} uses multi-lang `langs:` but also "
+                f"defines singular `source:`. Either drop `source:` and put "
+                f"settings under plural `sources.<lang>:`, or switch to "
+                f"single-lang shape (`lang: <lang>` + `source:`)."
+            )
+
+        # Merge AFTER validation. user_loaded shape is now guaranteed sane.
+        if user_loaded:
+            RepoMapGenerator._deep_merge(default, user_loaded)
+
+        # Strip default-carried fields that don't match the user-chosen shape,
+        # so source_discovery doesn't see stale defaults from the other shape.
+        # Drive the decision off user_loaded (what the user actually wrote),
+        # NOT off `default` (which always carries `source:`).
+        if u_langs:
+            default.pop("lang", None)
+            default.pop("source", None)
+        elif u_lang:
+            default.pop("langs", None)
+            default.pop("sources", None)
         return default
 
     @staticmethod
