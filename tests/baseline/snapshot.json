@@ -1,0 +1,63 @@
+{
+  "meta_normalized": {
+    "project_name": "Baseline Fixture",
+    "ranker_stats": {
+      "edges": 2,
+      "has_networkx": true,
+      "is_connected": false,
+      "nodes": 6
+    },
+    "source_path": "tests/fixtures/csharp/basic",
+    "stats": {
+      "class_count": 5,
+      "file_count": 3,
+      "method_count": 9,
+      "module_count": 3,
+      "reference_count": 2
+    },
+    "top_modules": [
+      {
+        "classes": 2,
+        "name": "FileScoped.cs"
+      },
+      {
+        "classes": 2,
+        "name": "Nested.cs"
+      },
+      {
+        "classes": 1,
+        "name": "Namespace.cs"
+      }
+    ]
+  },
+  "project_name": "Baseline Fixture",
+  "ranker_stats": {
+    "display_symbols": 5,
+    "edges": 2,
+    "has_networkx": true,
+    "is_connected": false,
+    "nodes": 6
+  },
+  "source_path": "tests/fixtures/csharp/basic",
+  "stats": {
+    "class_count": 5,
+    "file_count": 3,
+    "method_count": 9,
+    "module_count": 3,
+    "reference_count": 2
+  },
+  "top_modules": [
+    {
+      "classes": 2,
+      "name": "FileScoped.cs"
+    },
+    {
+      "classes": 2,
+      "name": "Nested.cs"
+    },
+    {
+      "classes": 1,
+      "name": "Namespace.cs"
+    }
+  ]
+}

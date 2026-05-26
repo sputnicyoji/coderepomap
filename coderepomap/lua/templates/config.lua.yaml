@@ -1,0 +1,42 @@
+# coderepomap Lua-only configuration template
+# Edit to fit your Lua project structure. For U3D + xLua mixed projects use
+# the multi-language form in `coderepomap/templates/config.generic.yaml`.
+
+project_name: "My Lua Project"
+
+lang: lua
+
+source:
+  root_path: "."
+  exclude_patterns:
+    - "**/test/**"
+    - "**/Test/**"
+    - "**/tests/**"
+    - "**/.luarocks/**"
+    - "**/.git/**"
+
+tokens:
+  l1_skeleton: 1000
+  l2_signatures: 2000
+  l3_relations: 3000
+  encoding: "cl100k_base"
+
+pagerank:
+  alpha: 0.85
+  max_iter: 100
+
+output:
+  directory: ".repomap/output"
+  files:
+    skeleton: "repomap-L1-skeleton.md"
+    signatures: "repomap-L2-signatures.md"
+    relations: "repomap-L3-relations.md"
+    meta: "repomap-meta.json"
+
+importance_boost:
+  patterns: []
+  priority_modules: []
+
+categories:
+  Other:
+    patterns: []

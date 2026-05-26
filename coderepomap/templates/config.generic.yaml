@@ -1,0 +1,65 @@
+# coderepomap generic configuration template (v0.2.0+)
+# Language-agnostic skeleton. Pick `lang:` for single-language or `langs:` for
+# multi-language. The chosen language's parser fills in `file_extensions` and
+# default exclude patterns; everything below is user-overridable.
+
+project_name: "My Project"
+
+# ---- Single-language mode ----
+# Uncomment exactly ONE of: `lang:` or `langs:`. Default skeleton ships
+# `lang: csharp` to make the generic preset useful out of the box.
+lang: csharp
+
+source:
+  root_path: "."
+  # Patterns merged with the language parser's `default_excludes`.
+  exclude_patterns:
+    - "**/test/**"
+    - "**/.git/**"
+
+# ---- Multi-language mode (commented example) ----
+# Set both `langs:` and `sources:` per-language. Remove `lang:` / `source:` above.
+#
+# langs: [csharp, lua]
+# sources:
+#   csharp:
+#     root_path: "Assets/Scripts"
+#     exclude_patterns: ["**/bin/**", "**/obj/**", "**/Editor/**"]
+#   lua:
+#     root_path: "Assets/LuaScripts"
+#     exclude_patterns: ["**/test/**"]
+# crosslang:
+#   enabled: true
+#   lua_csharp_call_patterns:
+#     - prefix: "CS."          # xLua
+#     - prefix: "UnityEngine." # sLua/ToLua (uncomment per your binding)
+
+# Token budgets for L1/L2/L3 output. Requires `coderepomap[tiktoken]` for
+# precise counts; without it a 4-chars/token fallback is used.
+tokens:
+  l1_skeleton: 1000
+  l2_signatures: 2000
+  l3_relations: 3000
+  encoding: "cl100k_base"
+
+pagerank:
+  alpha: 0.85
+  max_iter: 100
+
+output:
+  directory: ".repomap/output"
+  files:
+    skeleton: "repomap-L1-skeleton.md"
+    signatures: "repomap-L2-signatures.md"
+    relations: "repomap-L3-relations.md"
+    meta: "repomap-meta.json"
+
+# Empty defaults — the chosen language parser injects sensible defaults.
+# Anything you list here OVERRIDES the language default.
+importance_boost:
+  patterns: []
+  priority_modules: []
+
+categories:
+  Other:
+    patterns: []

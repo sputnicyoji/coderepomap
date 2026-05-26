@@ -1,0 +1,40 @@
+# Baseline config for Phase -1 / Phase 5 GATE
+# Points at the fixed fixture, not the actual repo, so output is reproducible.
+
+project_name: "Baseline Fixture"
+
+source:
+  root_path: "tests/fixtures/csharp/basic"
+  file_extensions:
+    - ".cs"
+  exclude_patterns: []
+
+tokens:
+  l1_skeleton: 1000
+  l2_signatures: 2000
+  l3_relations: 3000
+  encoding: "cl100k_base"
+
+pagerank:
+  alpha: 0.85
+  max_iter: 100
+
+output:
+  directory: "tests/baseline/output"
+  files:
+    skeleton: "repomap-L1-skeleton.md"
+    signatures: "repomap-L2-signatures.md"
+    relations: "repomap-L3-relations.md"
+    meta: "repomap-meta.json"
+
+importance_boost:
+  patterns:
+    - {suffix: "Manager", boost: 1.5, description: "Manager classes"}
+    - {suffix: "Panel", boost: 1.2, description: "Panel classes"}
+  priority_modules: []
+
+categories:
+  Core: {patterns: [Core, Manager]}
+  UI: {patterns: [UI, Panel]}
+  Data: {patterns: [Data, Container]}
+  Other: {patterns: []}
