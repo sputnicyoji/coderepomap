@@ -1,0 +1,40 @@
+project_name: "Go Project"
+lang: go
+source:
+  root_path: "."
+  file_extensions: [".go"]
+  exclude_patterns:
+    - "**/vendor/**"
+    - "**/testdata/**"
+    - "**/*_test.go"
+tokens:
+  l1_skeleton: 1000
+  l2_signatures: 2000
+  l3_relations: 3000
+  encoding: "cl100k_base"
+pagerank:
+  alpha: 0.85
+  max_iter: 100
+output:
+  directory: ".repomap/output"
+  files:
+    skeleton: "repomap-L1-skeleton.md"
+    signatures: "repomap-L2-signatures.md"
+    relations: "repomap-L3-relations.md"
+    meta: "repomap-meta.json"
+importance_boost:
+  patterns:
+    - {suffix: "er",      boost: 1.3, description: "Interfaces (Go -er convention)"}
+    - {suffix: "Service", boost: 1.8, description: "Service layer"}
+    - {suffix: "Handler", boost: 1.4, description: "HTTP/event handlers"}
+    - {suffix: "Server",  boost: 1.5, description: "Server components"}
+    - {suffix: "Client",  boost: 1.5, description: "Client wrappers"}
+  priority_modules: []
+categories:
+  Cmd:      {patterns: ["cmd", "main"]}
+  Internal: {patterns: ["internal"]}
+  Pkg:      {patterns: ["pkg"]}
+  API:      {patterns: ["api", "handler", "server"]}
+  Domain:   {patterns: ["model", "entity", "domain"]}
+  Storage:  {patterns: ["repo", "store", "db"]}
+  Other:    {patterns: []}
