@@ -144,14 +144,11 @@ resolved エッジは PageRank グラフに入ります。unresolved は L3 の 
 ## 開発
 
 ```bash
-git clone https://github.com/sputnicyoji/csharp_Repomap
-cd csharp_Repomap
+git clone https://github.com/sputnicyoji/coderepomap
+cd coderepomap
 python -m venv .venv && .venv/Scripts/activate    # PowerShell: .venv\Scripts\Activate.ps1
 pip install -e .[csharp,lua,tiktoken,dev]
 pytest tests/
 ```
 
 テスト fixture は `tests/fixtures/` にあります。C# パーサーのベースライン (snapshot + golden markdown) は `tests/baseline/` に固定されています — 意図的に再生成する場合は `tests/generate_baseline.py` を参照。124 のテストがパーサープラグイン、ranker、クロスランゲージリゾルバ、CLI、エンドツーエンドの generator 実行をカバーします。
-
-> [!WARNING]
-> GitHub リポジトリは歴史的な理由で依然として `csharp_Repomap` という名前です。パッケージ、CLI、モジュール名はすべて `coderepomap` (v0.2.0+) です。

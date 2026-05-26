@@ -144,14 +144,11 @@ resolved 边进 PageRank 图; unresolved 在 L3 **External References** 章节. 
 ## 开发
 
 ```bash
-git clone https://github.com/sputnicyoji/csharp_Repomap
-cd csharp_Repomap
+git clone https://github.com/sputnicyoji/coderepomap
+cd coderepomap
 python -m venv .venv && .venv/Scripts/activate    # PowerShell: .venv\Scripts\Activate.ps1
 pip install -e .[csharp,lua,tiktoken,dev]
 pytest tests/
 ```
 
 测试 fixture 位于 `tests/fixtures/`. C# 解析器基线 (snapshot + golden markdown) 固定在 `tests/baseline/` — 如需有意重生成参见 `tests/generate_baseline.py`. 124 个测试覆盖解析器插件、ranker、跨语言解析器、CLI 和端到端 generator.
-
-> [!WARNING]
-> GitHub 仓库出于历史原因仍叫 `csharp_Repomap`. 包名、CLI、模块名都已是 `coderepomap` (v0.2.0+).

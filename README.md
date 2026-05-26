@@ -144,14 +144,11 @@ The layering keeps each step replaceable — adding a language requires only a n
 ## Development
 
 ```bash
-git clone https://github.com/sputnicyoji/csharp_Repomap
-cd csharp_Repomap
+git clone https://github.com/sputnicyoji/coderepomap
+cd coderepomap
 python -m venv .venv && .venv/Scripts/activate    # PowerShell: .venv\Scripts\Activate.ps1
 pip install -e .[csharp,lua,tiktoken,dev]
 pytest tests/
 ```
 
 Test fixtures live in `tests/fixtures/`. The C# parser baseline (snapshot + golden markdown) is pinned in `tests/baseline/` — see `tests/generate_baseline.py` if you intentionally need to regenerate. 124 tests cover the parser plugins, ranker, cross-language resolver, CLI, and end-to-end generator runs.
-
-> [!WARNING]
-> The repository is still named `csharp_Repomap` on GitHub for legacy reasons. The package, CLI, and module names are all `coderepomap` (v0.2.0+).
