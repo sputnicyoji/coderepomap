@@ -356,6 +356,37 @@ class GoParser(LanguageParser):
                         lang="go",
                         lang_meta={"exported": self._is_exported(fname)},
                     ))
+            else:
+                # Embedded field: `Result` (same package) or `pkg.Type`
+                # (cross-package via import alias resolution in Task 13).
+                embed_id = None
+                embed_external = ""
+                for c in decl.children:
+                    if c.type == "type_identifier":
+                        ename = self._text(c, src_bytes)
+                        embed_id = ident.go_type_id(module_path, rel_dir, ename)
+                        embed_external = ename
+                        break
+                    if c.type == "qualified_type":
+                        pkg_node = next((x for x in c.children if x.type == "package_identifier"), None)
+                        tname_node = next((x for x in c.children if x.type == "type_identifier"), None)
+                        if pkg_node is not None and tname_node is not None:
+                            embed_external = f"{self._text(pkg_node, src_bytes)}.{self._text(tname_node, src_bytes)}"
+                            # Cross-package id resolution is filled in by Task 13
+                            # once the import table exists.
+                            embed_id = ""
+                        break
+                if embed_id is not None:
+                    references.append(Reference(
+                        from_id=ident.go_type_id(module_path, rel_dir, type_name),
+                        to_id=embed_id,
+                        to_external=embed_external,
+                        file=rel,
+                        line=self._line(decl),
+                        kind="inherits",
+                        lang="go",
+                        resolved=False,
+                    ))
 
     def _handle_function_decl(
         self, node, src_bytes, rel, module_path, rel_dir, symbols, references,

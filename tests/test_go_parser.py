@@ -125,3 +125,15 @@ def test_no_overload_collision_across_types(parsed):
     fmt = next(s for s in syms if s.kind == "method" and s.name == "Format")
     assert fmt.id == "go:example.com/myapp/pkg/service.Result.Format"
     assert fmt.parent == "Result"
+
+
+def test_struct_embedding_emits_inherits(parsed):
+    """`type Service struct { Name string; Result }` -> Service inherits Result."""
+    _, refs = parsed["pkg/service/service.go"]
+    inherits = [r for r in refs if r.kind == "inherits"]
+    edge = next(
+        r for r in inherits
+        if r.from_id == "go:example.com/myapp/pkg/service.Service"
+        and r.to_id == "go:example.com/myapp/pkg/service.Result"
+    )
+    assert edge.to_external in ("Result",)
