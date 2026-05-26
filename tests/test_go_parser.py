@@ -265,3 +265,38 @@ def test_regex_fallback_emits_minimum_symbols(tmp_path):
     assert ("function", "Baz") in kinds
     assert ("method", "Quux") in kinds
     assert any(s.kind == "package" for s in syms)
+
+
+def test_default_excludes_skip_test_files():
+    """Source discovery must drop *_test.go by default."""
+    from coderepomap.core import source_discovery
+
+    cfg = {"lang": "go", "source": {"root_path": str(FIXTURE)}}
+    files = source_discovery.discover(cfg, FIXTURE)
+    rels = sorted(str(sf.path.relative_to(sf.root)).replace("\\", "/") for sf in files)
+    assert not any(r.endswith("_test.go") for r in rels)
+    assert "main.go" in rels
+    assert "pkg/service/service.go" in rels
+
+
+def test_module_path_missing_falls_back_to_rel_dir(tmp_path):
+    """No go.mod -> module_path empty -> ids use just the rel dir path."""
+    pkg_dir = tmp_path / "alpha"
+    pkg_dir.mkdir()
+    src = pkg_dir / "x.go"
+    src.write_text("package alpha\nfunc Foo() {}\n", encoding="utf-8")
+    p = GoParser()
+    syms, _ = p.parse_file(src, tmp_path)
+    assert any(s.kind == "package" and s.id == "go:alpha" for s in syms)
+    assert any(s.id == "go:alpha.Foo" for s in syms)
+
+
+def test_module_path_resolved_for_subdir(tmp_path):
+    """A go.mod at the base resolves correctly for nested files."""
+    (tmp_path / "go.mod").write_text("module example.com/x\n\ngo 1.21\n", encoding="utf-8")
+    sub = tmp_path / "inner"
+    sub.mkdir()
+    (sub / "a.go").write_text("package inner\ntype T struct{}\n", encoding="utf-8")
+    p = GoParser()
+    syms, _ = p.parse_file(sub / "a.go", tmp_path)
+    assert any(s.kind == "class" and s.id == "go:example.com/x/inner.T" for s in syms)
