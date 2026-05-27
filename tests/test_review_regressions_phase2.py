@@ -563,3 +563,74 @@ def test_fix_c4_meta_top_modules_uses_entries_count():
     # When widened, the per-row count must reflect entry symbols (3 here), not class_count (0)
     handler_row = next(t for t in top if t["name"] == "handler")
     assert handler_row.get("entries", handler_row.get("classes")) == 3
+
+
+def test_fix_token_budget_l1_fills_up_to_cap_for_large_project():
+    """L1 entries hard-capped at 20 produces tiny output for large Go projects.
+    The renderer should expand its candidate pool when the budget allows."""
+    from coderepomap.core.parser_base import Symbol
+    from coderepomap.core.renderer import build_module_stats, render_l1
+    from coderepomap.core.ranker import PageRankRanker
+
+    syms = [
+        Symbol(id="go:m/pkg", name="pkg", fqn="m/pkg", kind="package",
+               file="pkg/x.go", line=1, lang="go"),
+    ]
+    # 100 top-level functions in the same package so the ranker has lots of
+    # candidates to potentially show in L1.
+    for i in range(100):
+        syms.append(Symbol(
+            id=f"go:m/pkg.Fn{i}", name=f"Fn{i}", fqn=f"m/pkg.Fn{i}",
+            kind="function", file="pkg/x.go", line=10 + i, lang="go",
+        ))
+    r = PageRankRanker()
+    for s in syms:
+        r.add_symbol(s.id, file=s.file, kind=s.kind, label=s.name,
+                     fqn=s.fqn, lang=s.lang)
+
+    out = render_l1(
+        syms, r, build_module_stats(syms),
+        {"tokens": {"l1_skeleton": 1500, "encoding": "cl100k_base"},
+         "categories": {"Other": {"patterns": []}}},
+        project_name="P", git_commit="", today_yyyy_mm_dd="2026-05-27",
+    )
+    # Count rows in the Core Entry Symbols table. Old code hard-capped at 20.
+    # New behavior: fill toward the token cap.
+    table_rows = [ln for ln in out.split("\n") if ln.startswith("| ") and "Fn" in ln]
+    assert len(table_rows) > 20, \
+        f"L1 still hard-capped at 20 even with 100 candidates and 1500-token budget; got {len(table_rows)} rows"
+
+
+def test_fix_token_budget_l2_fills_up_to_cap_for_large_project():
+    """L2 currently shows max 15 modules × 5 entries; for large projects the
+    budget often goes mostly unused. Expand the candidate pool, let the
+    trim loop enforce the cap."""
+    from coderepomap.core.parser_base import Symbol
+    from coderepomap.core.renderer import render_l2
+    from coderepomap.core.ranker import PageRankRanker
+
+    # 30 modules each with one struct + signature
+    syms = []
+    for i in range(30):
+        syms.append(Symbol(
+            id=f"go:m/mod{i}", name=f"mod{i}", fqn=f"m/mod{i}",
+            kind="package", file=f"mod{i}/x.go", line=1,
+            signature=f"package mod{i}", lang="go",
+        ))
+        syms.append(Symbol(
+            id=f"go:m/mod{i}.S{i}", name=f"S{i}", fqn=f"m/mod{i}.S{i}",
+            kind="class", file=f"mod{i}/x.go", line=2,
+            signature=f"type S{i} struct", lang="go",
+        ))
+    r = PageRankRanker()
+    for s in syms:
+        r.add_symbol(s.id, file=s.file, kind=s.kind, label=s.name,
+                     fqn=s.fqn, lang=s.lang)
+    out = render_l2(
+        syms, r,
+        {"tokens": {"l2_signatures": 2000, "encoding": "cl100k_base"}},
+        project_name="P",
+    )
+    module_headers = [ln for ln in out.split("\n") if ln.startswith("## ")]
+    assert len(module_headers) > 15, \
+        f"L2 still hard-capped at 15 modules even with 30 candidates and 2000-token budget; got {len(module_headers)} module sections"

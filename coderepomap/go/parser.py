@@ -49,6 +49,14 @@ class GoParser(LanguageParser):
         "**/.git/**",
         "**/node_modules/**",
         "**/bin/**",
+        # Generated code — Go community convention. *.pb.go is protoc-gen-go's
+        # standard output naming; *_gen.go / *.generated.go cover common code
+        # generators (stringer, mockgen, easyjson, etc.). Content-level
+        # detection (`Code generated ... DO NOT EDIT.` marker) is also applied
+        # at parse_file entry for files outside these path patterns.
+        "**/*.pb.go",
+        "**/*_gen.go",
+        "**/*.generated.go",
     ]
     default_boost_patterns = [
         {"suffix": "er",         "boost": 1.3, "description": "Interfaces (Go -er convention)"},
@@ -153,6 +161,15 @@ class GoParser(LanguageParser):
 
     # --- entry --------------------------------------------------------------
 
+    # The Go community convention for marking generated files (gofmt-spec'd,
+    # honored by go/build, protoc-gen-go, stringer, mockgen, etc.). When this
+    # marker appears at the top of a file (allowing for build-tag preamble),
+    # the file's business symbols are skipped — only the package symbol is
+    # emitted so downstream importers still resolve.
+    _CODEGEN_MARKER = re.compile(
+        r"^//\s*Code generated.*DO NOT EDIT\.?", re.MULTILINE
+    )
+
     def parse_file(self, file_path: Path, base_path: Path) -> Tuple[List[Symbol], List[Reference]]:
         try:
             content = file_path.read_text(encoding="utf-8")
@@ -171,9 +188,48 @@ class GoParser(LanguageParser):
         rel_dir = self._rel_dir_from_file(file_path, base_path)
         package_id = ident.go_package_id(module_path, rel_dir)
 
+        # Content-level generated-file check: scan the first ~80 lines for the
+        # canonical marker. This catches generators that emit files outside
+        # the default-excluded path patterns (e.g. a `gdconf/` directory full
+        # of `// Code generated ... DO NOT EDIT.` files). Only the package
+        # symbol is emitted; symbols and references are skipped.
+        head = content[:4000]
+        if self._CODEGEN_MARKER.search(head):
+            return self._emit_package_only(rel, module_path, rel_dir, package_id, content)
+
         if self._init_parser():
             return self._parse_with_ts(content, rel, module_path, rel_dir, package_id)
         return self._parse_with_regex(content, rel, module_path, rel_dir, package_id)
+
+    def _emit_package_only(
+        self, rel: str, module_path: str, rel_dir: str, package_id: str, content: str,
+    ) -> Tuple[List[Symbol], List[Reference]]:
+        """Skip-mode: emit ONLY the package symbol (so importers still resolve)
+        and drop generated business symbols/refs."""
+        if package_id in self._parsed_packages:
+            return [], []
+        self._parsed_packages.add(package_id)
+        m = re.search(r"^package\s+(\w+)", content, flags=re.MULTILINE)
+        package_name = m.group(1) if m else ""
+        display_name = package_name or (
+            package_id.rsplit("/", 1)[-1] if "/" in package_id
+            else package_id[len("go:"):]
+        )
+        sym = Symbol(
+            id=package_id,
+            name=display_name,
+            fqn=package_id[len("go:"):],
+            kind="package",
+            file=rel, line=1,
+            signature=f"package {display_name}",
+            lang="go",
+            lang_meta={
+                "package_name": package_name,
+                "import_path": package_id[len("go:"):],
+                "generated": True,
+            },
+        )
+        return [sym], []
 
     # --- TS walker (filled in by later tasks) -------------------------------
 

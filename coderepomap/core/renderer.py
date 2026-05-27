@@ -205,7 +205,11 @@ def render_l1(
         if not mods:
             continue
         lines.append(f"### {cat_name}")
-        for module, info, rank in sorted(mods, key=lambda x: x[2], reverse=True)[:10]:
+        # Widened candidate pool: take up to 30 modules per category so large
+        # projects use their token budget; the trim loop at the bottom enforces
+        # the cap. Small projects (e.g. C# baseline with 3 modules) are
+        # unaffected.
+        for module, info, rank in sorted(mods, key=lambda x: x[2], reverse=True)[:30]:
             active = " [Active]" if module in priority_modules else ""
             if info.get("widened", False):
                 lines.append(
@@ -227,7 +231,10 @@ def render_l1(
     # Look up methods by (container, parent) match — not by bare label — to
     # avoid merging methods across same-named classes in different namespaces.
     syms_by_id = {s.id: s for s in symbols}
-    ranked_symbols = ranker.get_ranked_symbols(limit=20)
+    # Widened candidate pool: 100 lets large projects fill their token budget
+    # (the trim loop below scales the actual rendered count down to fit the
+    # cap). Small projects with <20 entry symbols are unaffected.
+    ranked_symbols = ranker.get_ranked_symbols(limit=100)
     for sid, rank, info in ranked_symbols:
         label = info.get("label", sid)
         cls_sym = syms_by_id.get(sid)
@@ -296,7 +303,10 @@ def render_l2(
                 break
         module_widened[module] = widened
 
-    for module in sorted_modules[:15]:
+    # Widened candidate pool: 50 modules and 20 entries per module so large
+    # projects fill their token budget. The trim loop at the bottom enforces
+    # the cap by popping trailing module sections; small projects unaffected.
+    for module in sorted_modules[:50]:
         classes = module_classes[module]
         total_rank = module_ranks[module]
         widened = module_widened.get(module, False)
@@ -316,7 +326,7 @@ def render_l2(
             )
             lines.append(f"## {module} ({shown_count} classes, rank: {total_rank:.2f})")
         lines.append("")
-        for sid, rank, info in sorted(classes, key=lambda x: x[1], reverse=True)[:5]:
+        for sid, rank, info in sorted(classes, key=lambda x: x[1], reverse=True)[:20]:
             sym = syms_by_id.get(sid)
             if sym is None:
                 continue
