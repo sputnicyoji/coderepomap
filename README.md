@@ -19,11 +19,12 @@ Language support is plugin-based: C#, Lua, and Go ship in the box. In Unity + xL
 
 ## Features
 
-- **Three layers, one budget.** L1 skeleton / L2 signatures / L3 relations, each capped by a configurable token budget (`tiktoken` precise, 4-chars-per-token fallback).
+- **Three layers, one budget.** L1 skeleton / L2 signatures / L3 relations, each capped by a configurable token budget (`tiktoken` precise, 4-chars-per-token fallback). The renderer fills the budget — 7000-file Go projects use ~99% of the L1 cap instead of stopping at a hard limit.
 - **Multi-language plugin system.** C# (`tree-sitter-c-sharp`), Lua (`tree-sitter-lua`), and Go (`tree-sitter-go`) share one `LanguageParser` contract; add more by dropping in a subpackage.
 - **Cross-language graph.** Lua → C# references resolved through a project-wide symbol index, with ambiguous candidates surfaced rather than silently merged.
 - **PageRank-ranked output.** Important classes float to the top of every layer; ranking is plugin-tunable via prefix/suffix boost patterns.
-- **Stable Symbol IDs.** Overload-aware (`csharp:Ns.Type.Method(int,string)`), instance-vs-static distinct (`lua:mod.T#method` vs `lua:mod.T.f`).
+- **Stable Symbol IDs.** Overload-aware (`csharp:Ns.Type.Method(int,string)`), instance-vs-static distinct (`lua:mod.T#method` vs `lua:mod.T.f`), Go module-path scoped (`go:example.com/myapp/pkg/service.Service.Run`).
+- **Generated-code skipping (Go).** Files matching `*.pb.go` / `*_gen.go` / `*.generated.go` or carrying the `// Code generated ... DO NOT EDIT.` marker are detected and skipped — only the package symbol is kept so importers still resolve. Cuts symbol count by ~80% on typical Go service repos.
 - **Git hooks.** Drop-in `post-checkout` / `post-merge` regeneration; opt-in Windows toast notifier.
 
 ## Install
@@ -111,21 +112,20 @@ Resolved edges enter the PageRank graph; unresolved ones surface under **Externa
 |---|---|---|---|
 | C# | `tree-sitter-c-sharp` + regex fallback | `csharp:Ns.Type.Method(paramtypes)` | Namespaces (incl. file-scoped), nested types, overload-aware ids, Unity preset |
 | Lua | `tree-sitter-lua` + regex fallback | `lua:mod.T#method` (instance), `lua:mod.T.f` (static) | xLua / sLua / ToLua, file-scope alias table, `setmetatable` inheritance |
-
-See [docs/lang-csharp.md](docs/lang-csharp.md) and [docs/lang-lua.md](docs/lang-lua.md) for what each parser captures and the known limitations carried over from v0.1.0.
+| Go | `tree-sitter-go` + regex fallback | `go:<module-path>/<rel-dir>.<Type>.<Method>` | `go.mod`-aware module path, struct embedding → `inherits`, interface declarations, file-local import alias table (incl. `/v2` semantic-version-suffix heuristic), generic types, pointer vs value receivers via `lang_meta`, `Code generated ... DO NOT EDIT.` skip |
 
 ## CLI
 
 | Command | Flags | Description |
 |---|---|---|
-| `repomap init` | `--lang csharp\|lua`, `--preset unity\|generic`, `--force` | Write `.repomap/config.yaml` |
+| `repomap init` | `--lang csharp\|lua\|go`, `--preset unity\|generic`, `--force` | Write `.repomap/config.yaml` |
 | `repomap generate` | `--verbose`, `--notify`, `--config <path>` | Parse sources, write L1/L2/L3/meta |
 | `repomap status` | — | Show last-run stats + registered language parsers |
 | `repomap hooks` | `--install` (default), `--uninstall`, `--with-notify` | Manage git `post-checkout` / `post-merge` regeneration |
 
 ## Claude Code skill
 
-`skills/repomap/` ships a [Claude Code](https://claude.com/claude-code) skill that drives this CLI from natural-language prompts ("generate code map", "扫一下代码结构 / 生成 repomap"). Install per [skills/README.md](skills/README.md) and the skill auto-detects C# / Lua / mixed projects, runs `python -m coderepomap generate`, and summarizes the result.
+`skills/repomap/` ships a [Claude Code](https://claude.com/claude-code) skill that drives this CLI from natural-language prompts ("generate code map", "扫一下代码结构 / 生成 repomap"). Install per [skills/README.md](skills/README.md) and the skill auto-detects C# / Lua / Go / mixed projects, runs `python -m coderepomap generate`, and summarizes the result.
 
 `python -m coderepomap` and `repomap` are interchangeable.
 
@@ -152,8 +152,8 @@ The layering keeps each step replaceable — adding a language requires only a n
 git clone https://github.com/sputnicyoji/coderepomap
 cd coderepomap
 python -m venv .venv && .venv/Scripts/activate    # PowerShell: .venv\Scripts\Activate.ps1
-pip install -e .[csharp,lua,tiktoken,dev]
+pip install -e .[csharp,lua,go,tiktoken,dev]
 pytest tests/
 ```
 
-Test fixtures live in `tests/fixtures/`. The C# parser baseline (snapshot + golden markdown) is pinned in `tests/baseline/` — see `tests/generate_baseline.py` if you intentionally need to regenerate. 124 tests cover the parser plugins, ranker, cross-language resolver, CLI, and end-to-end generator runs.
+Test fixtures live in `tests/fixtures/` (`csharp/`, `lua/`, `go/`, `u3d_mixed/`). The C# parser baseline (snapshot + golden markdown) is pinned in `tests/baseline/` and any change to the renderer or generator MUST keep it byte-equivalent — see `tests/generate_baseline.py` if you intentionally need to regenerate. 206 tests cover the parser plugins, ranker, cross-language resolver, CLI, packaging smoke, and end-to-end generator runs for each language.
