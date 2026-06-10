@@ -8,6 +8,49 @@ All notable changes to `coderepomap` are documented here. Format based on
 
 ### Added
 
+#### TypeScript language plug-in
+
+- New `coderepomap.typescript` subpackage registering
+  `TypeScriptParser(LanguageParser)`; separate tree-sitter parsers for the
+  TS and TSX dialects, selected per file extension.
+- AST walker covering: per-file module symbols, per-directory `package`
+  symbols (the renderer's widened-mode sentinel, mirroring Go), classes
+  (incl. `abstract`), interfaces (+ `method_signature` members), enums
+  (`class` kind with `lang_meta.declaration_form`), type aliases
+  (`interface` kind), top-level functions AND arrow consts, class methods
+  (accessibility / static / async in `lang_meta`), class property arrow
+  methods, heritage clauses (`extends` → `inherits`, `implements` →
+  `implements`), file-local import binding table, in-body call / new
+  references with locals + builtins suppression.
+- ESM-aware relative-import resolution: `./search.js` strips the compiled
+  extension and finds `search.ts` on disk; extensionless directory imports
+  resolve through `index.ts`; bare specifiers (npm / node builtins) stay
+  unresolved and render under L3 External References (one ref per import
+  statement, not per binding, to keep L3 lean).
+- Named imports / re-exports predict `typescript:<module>.<Name>` ids;
+  crosslang flips exact matches and a new Path 2b trailing-segment trim
+  promotes misses (plain consts, type-only names, re-exported bindings) to
+  the deepest existing symbol — usually the file module node.
+- Stable id scheme documented in `core/identity.py`: `typescript:<rel-path>`
+  modules (directory separators stay `/`, `.` reserved for symbol segments),
+  `typescript:<dir>/` packages (trailing slash keeps `core/assembler.ts` and
+  `core/assembler/` disjoint), `.{Type}.{method}` members.
+- Regex fallback (when `tree-sitter-typescript` is missing) covering
+  classes, interfaces, functions, enums, type aliases, arrow consts, and
+  imports at module level.
+- Default excludes for Vitest/Jest co-located tests, `node_modules`, build
+  output, and `**/*.d.ts` (ambient declarations; dotted stems would also
+  fight the trailing-segment trim).
+- `repomap init --lang typescript` writes a TypeScript-flavored
+  `.repomap/config.yaml` (root_path `src`, TS boost patterns + categories).
+- `pyproject.toml`: new `[typescript]` extras (`tree-sitter>=0.21`,
+  `tree-sitter-typescript>=0.21`); `all` extras updated;
+  `coderepomap.typescript` package-data entry; `typescript` keyword.
+- Tests: `tests/test_typescript_parser.py` (35 cases over a fixture project
+  exercising all four import shapes, heritage, bodies, crosslang promotion,
+  and the regex fallback), `tests/test_typescript_generate.py` (end-to-end
+  pipeline incl. graph-edge assertions), CLI init + packaging tests.
+
 #### Go language plug-in
 
 - New `coderepomap.go` subpackage registering `GoParser(LanguageParser)`.

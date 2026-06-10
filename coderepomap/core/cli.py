@@ -4,7 +4,7 @@
 CLI for coderepomap
 
 Commands:
-    repomap init [--lang csharp|lua|go] [--preset unity|generic]  Initialize configuration
+    repomap init [--lang csharp|lua|go|typescript] [--preset unity|generic]  Initialize configuration
     repomap generate [--verbose] [--notify]                     Generate repo map
     repomap status                                              Show current status
     repomap hooks [--install|--uninstall]                       Manage Git hooks
@@ -127,6 +127,8 @@ def _resolve_init_template(lang: str, preset: str) -> Optional[Path]:
       lua    + unity   -> rejected (caller must check before calling)
       lua    + generic -> coderepomap/lua/templates/config.lua.yaml if it exists,
                           else coderepomap/templates/config.generic.yaml (post-processed)
+      go / typescript  -> coderepomap/<lang>/templates/config.<lang>.yaml if it
+                          exists, else coderepomap/templates/config.generic.yaml
     """
     if lang == 'csharp':
         if preset == 'unity':
@@ -142,6 +144,11 @@ def _resolve_init_template(lang: str, preset: str) -> Optional[Path]:
         go_specific = get_lang_templates_dir('go') / 'config.go.yaml'
         if go_specific.exists():
             return go_specific
+        return get_templates_dir() / 'config.generic.yaml'
+    elif lang == 'typescript':
+        ts_specific = get_lang_templates_dir('typescript') / 'config.typescript.yaml'
+        if ts_specific.exists():
+            return ts_specific
         return get_templates_dir() / 'config.generic.yaml'
     # Unknown lang: fall through to default config generation
     return None
@@ -574,7 +581,7 @@ Examples:
     init_parser = subparsers.add_parser('init', help='Initialize configuration')
     init_parser.add_argument(
         '--lang', '-l',
-        choices=['csharp', 'lua', 'go'],
+        choices=['csharp', 'lua', 'go', 'typescript'],
         default='csharp',
         help='Target language (default: csharp)'
     )

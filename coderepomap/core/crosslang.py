@@ -1,7 +1,7 @@
 """
 Cross-language reference resolver.
 
-Two roles:
+Three roles:
 
 1. **Post-resolve Lua-internal references** that LuaParser couldn't verify
    locally — e.g. `require "foo.bar"` produces `to_id="lua:foo.bar"` with
@@ -14,6 +14,12 @@ Two roles:
    - exact FQN match -> resolved
    - short-name unique match -> resolved
    - short-name multi-match -> unresolved with `lang_meta["candidates"]`
+
+3. **Post-resolve TypeScript-internal references** whose optimistically
+   predicted `typescript:<module>.<Name>` id has no matching symbol (plain
+   const exports, type-only names, re-exported bindings). The trailing
+   `.segment` trim promotes them to the deepest existing symbol — usually
+   the file module node — mirroring the Lua module-level promotion.
 
 Pure function; no I/O, no parser knowledge. Inputs are Symbol / Reference
 lists; mutates the Reference list in place.
@@ -143,6 +149,28 @@ def resolve(
                     ref.to_id = candidate
                     ref.resolved = True
                     ref.to_external = body if ref.kind == "call" and i < len(parts) else ""
+                    break
+
+        # Path 2b: TypeScript-internal refs with predicted `typescript:` ids
+        # whose trailing segment doesn't exist as a symbol — a named import of
+        # a plain `const`, a type-only export, or a re-exported binding. The
+        # module ids keep `/` for directories and reserve `.` for symbol
+        # segments (see core/identity.py), so trimming trailing `.segment`s
+        # walks method -> type -> module exactly like the Lua promotion above.
+        # Edges promoted to the module node are coarser than symbol-level but
+        # graph-correct; dropping them entirely would starve PageRank of the
+        # import backbone.
+        if ref.to_id.startswith("typescript:") and ref.kind in (
+            "import", "call", "uses", "inherits", "implements",
+        ):
+            body = ref.to_id[len("typescript:"):]
+            parts = body.split(".")
+            for i in range(len(parts), 0, -1):
+                candidate = "typescript:" + ".".join(parts[:i])
+                if candidate in id_index:
+                    ref.to_id = candidate
+                    ref.resolved = True
+                    ref.to_external = body if i < len(parts) else ""
                     break
 
         # Path 3: csharp_call from Lua, target lives as textual chain in to_external.

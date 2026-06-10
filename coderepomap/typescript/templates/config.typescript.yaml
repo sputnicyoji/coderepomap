@@ -1,0 +1,47 @@
+project_name: "TypeScript Project"
+lang: typescript
+source:
+  root_path: "src"
+  file_extensions: [".ts", ".tsx"]
+  exclude_patterns:
+    - "**/node_modules/**"
+    - "**/dist/**"
+    - "**/*.test.ts"
+    - "**/*.spec.ts"
+    - "**/*.d.ts"
+tokens:
+  l1_skeleton: 1000
+  l2_signatures: 2000
+  l3_relations: 3000
+  encoding: "cl100k_base"
+pagerank:
+  alpha: 0.85
+  max_iter: 100
+output:
+  directory: ".repomap/output"
+  files:
+    skeleton: "repomap-L1-skeleton.md"
+    signatures: "repomap-L2-signatures.md"
+    relations: "repomap-L3-relations.md"
+    meta: "repomap-meta.json"
+importance_boost:
+  patterns:
+    - {suffix: "Service",    boost: 1.8, description: "Service layer"}
+    - {suffix: "Controller", boost: 1.7, description: "Controllers"}
+    - {suffix: "Manager",    boost: 1.5, description: "Manager"}
+    - {suffix: "Provider",   boost: 1.5, description: "Provider pattern"}
+    - {suffix: "Repository", boost: 1.5, description: "Data access"}
+    - {suffix: "Store",      boost: 1.4, description: "State management"}
+    - {suffix: "Handler",    boost: 1.4, description: "Event handlers"}
+    - {suffix: "Adapter",    boost: 1.4, description: "Adapter pattern"}
+  priority_modules: []
+categories:
+  Core:    {patterns: ["core", "app", "main", "index"]}
+  API:     {patterns: ["api", "routes", "controller", "handler", "server"]}
+  Service: {patterns: ["service"]}
+  Domain:  {patterns: ["model", "entity", "domain", "types", "schema"]}
+  Storage: {patterns: ["store", "repository", "storage", "db"]}
+  UI:      {patterns: ["component", "page", "view", "ui"]}
+  Utils:   {patterns: ["util", "helper", "lib", "shared"]}
+  Config:  {patterns: ["config", "settings"]}
+  Other:   {patterns: []}

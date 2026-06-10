@@ -113,12 +113,13 @@ Resolved edges enter the PageRank graph; unresolved ones surface under **Externa
 | C# | `tree-sitter-c-sharp` + regex fallback | `csharp:Ns.Type.Method(paramtypes)` | Namespaces (incl. file-scoped), nested types, overload-aware ids, Unity preset |
 | Lua | `tree-sitter-lua` + regex fallback | `lua:mod.T#method` (instance), `lua:mod.T.f` (static) | xLua / sLua / ToLua, file-scope alias table, `setmetatable` inheritance |
 | Go | `tree-sitter-go` + regex fallback | `go:<module-path>/<rel-dir>.<Type>.<Method>` | `go.mod`-aware module path, struct embedding → `inherits`, interface declarations, file-local import alias table (incl. `/v2` semantic-version-suffix heuristic), generic types, pointer vs value receivers via `lang_meta`, `Code generated ... DO NOT EDIT.` skip |
+| TypeScript | `tree-sitter-typescript` (TS + TSX dialects) + regex fallback | `typescript:<rel-path>.<Type>.<method>` | ESM `.js`-suffix specifier resolution, `index.ts` directory imports, per-file module + per-directory package symbols, interfaces / type aliases / enums / arrow consts, heritage → `inherits` / `implements`, import-binding call resolution, npm / builtin imports surfaced as L3 externals |
 
 ## CLI
 
 | Command | Flags | Description |
 |---|---|---|
-| `repomap init` | `--lang csharp\|lua\|go`, `--preset unity\|generic`, `--force` | Write `.repomap/config.yaml` |
+| `repomap init` | `--lang csharp\|lua\|go\|typescript`, `--preset unity\|generic`, `--force` | Write `.repomap/config.yaml` |
 | `repomap generate` | `--verbose`, `--notify`, `--config <path>` | Parse sources, write L1/L2/L3/meta |
 | `repomap status` | — | Show last-run stats + registered language parsers |
 | `repomap hooks` | `--install` (default), `--uninstall`, `--with-notify` | Manage git `post-checkout` / `post-merge` regeneration |

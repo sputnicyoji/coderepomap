@@ -30,6 +30,25 @@ Lua:
 - After the prefix, `:` is forbidden in the body (use `#` for instance methods).
 - `module_id` is the source-root-relative path with `/` -> `.` and `.lua` stripped
   (e.g. `Assets/LuaScripts/foo/bar.lua` -> `foo.bar`).
+
+TypeScript:
+
+    package    typescript:{rel-dir}/                      # one per directory; trailing
+                                                          # slash so a dir `core/assembler/`
+                                                          # cannot collide with the file
+                                                          # module `core/assembler.ts`
+    module     typescript:{module_id}                     # one per file
+    class      typescript:{module_id}.{Type}              # also enums (declaration_form
+                                                          # in lang_meta)
+    interface  typescript:{module_id}.{Type}              # also type aliases
+    function   typescript:{module_id}.{name}              # incl. top-level arrow consts
+    method     typescript:{module_id}.{Type}.{method}
+
+- `module_id` is the source-root-relative path with `/` separators kept and
+  `.ts` / `.tsx` stripped (e.g. `memory/search.ts` -> `memory/search`).
+- Directory separators stay `/` (Go-style); `.` only ever introduces symbol
+  segments, which is what lets crosslang's trailing-segment trim promote an
+  unmatched `typescript:mod.Name` to the `typescript:mod` module node.
 """
 
 from __future__ import annotations
@@ -169,6 +188,50 @@ def go_member_id(module_path: str, rel_dir: str, type_name: str, member: str) ->
     return f"{go_package_id(module_path, rel_dir)}.{type_name}.{member}"
 
 
+# ----- TypeScript -----
+
+def ts_module_id_from_path(file_path: Path, source_root: Path) -> str:
+    """Compute `module_id` from a `.ts` / `.tsx` file path relative to a source root.
+
+    `src/memory/search.ts` with root `src` -> `memory/search`. Directory
+    separators are kept as `/` (normalized from Windows backslashes) so `.`
+    remains reserved for symbol segments.
+    """
+    try:
+        rel = file_path.resolve().relative_to(source_root.resolve())
+    except ValueError:
+        rel = file_path
+    return rel.with_suffix("").as_posix()
+
+
+def ts_module_symbol_id(module_id: str) -> str:
+    """Id for the module-as-symbol (one per file)."""
+    return f"typescript:{module_id}"
+
+
+def ts_package_id(rel_dir: str) -> str:
+    """Id for a TypeScript directory symbol (one per directory).
+
+    The trailing `/` keeps directory ids disjoint from file module ids even
+    when a project contains both `core/assembler.ts` and `core/assembler/`.
+    `rel_dir` is normalized to forward slashes; "" (source root) is the
+    caller's responsibility to skip.
+    """
+    body = rel_dir.replace("\\", "/").strip("/")
+    return f"typescript:{body}/"
+
+
+def ts_decl_id(module_id: str, name: str) -> str:
+    """Id for a top-level class / interface / enum / type alias / function."""
+    return f"typescript:{module_id}.{name}"
+
+
+def ts_method_id(module_id: str, type_name: str, method: str) -> str:
+    """Id for a class or interface member. Static vs instance is recorded in
+    `Symbol.lang_meta.static`, not in the id (mirrors Go's receiver_kind)."""
+    return f"typescript:{module_id}.{type_name}.{method}"
+
+
 __all__ = [
     "csharp_type_id",
     "csharp_method_id",
@@ -183,4 +246,9 @@ __all__ = [
     "go_type_id",
     "go_method_id",
     "go_member_id",
+    "ts_module_id_from_path",
+    "ts_module_symbol_id",
+    "ts_package_id",
+    "ts_decl_id",
+    "ts_method_id",
 ]

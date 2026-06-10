@@ -99,3 +99,30 @@ def test_pyproject_declares_go_extras():
     text = pathlib.Path("pyproject.toml").read_text(encoding="utf-8")
     assert "tree-sitter-go" in text
     assert "coderepomap.go" in text
+
+
+def test_cli_init_lang_typescript_creates_config(tmp_path, monkeypatch):
+    """`repomap init --lang typescript` writes config.yaml with `lang: typescript`."""
+    from coderepomap.core import cli
+    monkeypatch.chdir(tmp_path)
+    args = type("A", (), {"lang": "typescript", "preset": "generic", "force": False})()
+    rc = cli.cmd_init(args)
+    assert rc == 0
+    cfg = (tmp_path / ".repomap" / "config.yaml").read_text(encoding="utf-8")
+    assert "lang: typescript" in cfg
+
+
+def test_cli_init_lang_typescript_with_unity_preset_rejected(tmp_path, monkeypatch):
+    """Unity preset is meaningless for TypeScript; CLI must reject it."""
+    from coderepomap.core import cli
+    monkeypatch.chdir(tmp_path)
+    args = type("A", (), {"lang": "typescript", "preset": "unity", "force": False})()
+    rc = cli.cmd_init(args)
+    assert rc == 1
+
+
+def test_pyproject_declares_typescript_extras():
+    import pathlib
+    text = pathlib.Path("pyproject.toml").read_text(encoding="utf-8")
+    assert "tree-sitter-typescript" in text
+    assert "coderepomap.typescript" in text

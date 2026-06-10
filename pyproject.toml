@@ -12,7 +12,7 @@ requires-python = ">=3.8"
 authors = [
     {name = "Yoji", email = "yoji@example.com"}
 ]
-keywords = ["csharp", "lua", "go", "golang", "unity", "code-analysis", "repomap", "claude", "ai", "multi-language"]
+keywords = ["csharp", "lua", "go", "golang", "typescript", "unity", "code-analysis", "repomap", "claude", "ai", "multi-language"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -46,6 +46,10 @@ go = [
     "tree-sitter>=0.21",
     "tree-sitter-go>=0.21",
 ]
+typescript = [
+    "tree-sitter>=0.21",
+    "tree-sitter-typescript>=0.21",
+]
 tiktoken = [
     "tiktoken>=0.5.0",
 ]
@@ -54,7 +58,7 @@ dev = [
     "pytest-cov",
 ]
 all = [
-    "coderepomap[csharp,lua,go,tiktoken]",
+    "coderepomap[csharp,lua,go,typescript,tiktoken]",
 ]
 
 [project.scripts]
@@ -78,3 +82,4 @@ coderepomap = [
 "coderepomap.csharp" = ["templates/*.yaml"]
 "coderepomap.lua" = ["templates/*.yaml"]
 "coderepomap.go" = ["templates/*.yaml"]
+"coderepomap.typescript" = ["templates/*.yaml"]

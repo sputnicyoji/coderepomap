@@ -105,9 +105,10 @@ def build_module_stats(symbols: List[Symbol]) -> Dict[str, dict]:
       - `symbol_count` (new): total entry symbols across the widened kind set
       - `entries`     (new): names of those entry symbols (in stable order)
       - `widened`     (new): True iff this module has a `package` kind symbol
-                             (Go's structural sentinel; C# / Lua never emit it).
-                             C# modules with interfaces stay False to preserve
-                             v0.1.0 byte-equivalent L2 output.
+                             (the structural sentinel; Go and TypeScript emit
+                             it, C# / Lua never do). C# modules with interfaces
+                             stay False to preserve v0.1.0 byte-equivalent L2
+                             output.
       - `file_count`  (legacy): number of distinct files in this module (only
                              counts files that contribute at least one entry symbol)
     """
@@ -133,9 +134,10 @@ def build_module_stats(symbols: List[Symbol]) -> Dict[str, dict]:
             info["class_count"] += 1
             info["classes"].append(sym.name)
         if sym.kind == "package":
-            # `package` kind is the structural sentinel: only Go emits it.
-            # Triggering widened on `package` keeps C#-with-interfaces output
-            # byte-equivalent to v0.1.0 while flipping wording for Go modules.
+            # `package` kind is the structural sentinel: Go emits it per
+            # directory, TypeScript per source directory. Triggering widened
+            # on `package` keeps C#-with-interfaces output byte-equivalent to
+            # v0.1.0 while flipping wording for Go / TypeScript modules.
             info["widened"] = True
     for m in modules.values():
         m["file_count"] = len(m["files"])
@@ -289,10 +291,11 @@ def render_l2(
     sorted_modules = sorted(module_ranks.keys(), key=lambda x: module_ranks[x], reverse=True)
 
     syms_by_id = {s.id: s for s in symbols}
-    # Per-module widened mode: a module is widened iff it contains a Go
-    # `package` kind symbol (the only language-structural sentinel; C# / Lua
-    # never emit it). Pure-class modules (C#-only, even with interfaces) keep
-    # the v0.1.0 `(N classes)` wording and drop non-class entries.
+    # Per-module widened mode: a module is widened iff it contains a
+    # `package` kind symbol (the language-structural sentinel emitted by Go
+    # and TypeScript; C# / Lua never emit it). Pure-class modules (C#-only,
+    # even with interfaces) keep the v0.1.0 `(N classes)` wording and drop
+    # non-class entries.
     module_widened: Dict[str, bool] = {}
     for module, bucket in module_classes.items():
         widened = False
