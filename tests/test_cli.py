@@ -126,3 +126,34 @@ def test_pyproject_declares_typescript_extras():
     text = pathlib.Path("pyproject.toml").read_text(encoding="utf-8")
     assert "tree-sitter-typescript" in text
     assert "coderepomap.typescript" in text
+
+
+def test_hooks_bake_language_extensions_and_interpreter(tmp_path, monkeypatch):
+    """Installed hooks must trigger on the CONFIGURED language's extensions
+    (not the historical hardcoded `.cs`) and fall back to the installing
+    interpreter when `repomap` is not on the hook's PATH."""
+    from coderepomap.core import cli
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    init_args = type("A", (), {"lang": "typescript", "preset": "generic", "force": False})()
+    assert cli.cmd_init(init_args) == 0
+    hook_args = type("A", (), {"uninstall": False, "with_notify": False})()
+    assert cli.cmd_hooks(hook_args) == 0
+
+    hook = (tmp_path / ".git" / "hooks" / "post-merge").read_text(encoding="utf-8")
+    assert r"\.(ts|tsx)$" in hook
+    assert r"\.cs$" not in hook
+    assert "__REPOMAP_EXT_PATTERN__" not in hook, "placeholder must be baked"
+    assert "__REPOMAP_PYTHON__" not in hook, "placeholder must be baked"
+    assert "-m coderepomap" in hook, "venv fallback launcher must be baked"
+
+
+def test_hooks_fall_back_to_all_languages_without_config(tmp_path, monkeypatch):
+    """No .repomap/config.yaml -> hook watches every built-in language."""
+    from coderepomap.core import cli
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    hook_args = type("A", (), {"uninstall": False, "with_notify": False})()
+    assert cli.cmd_hooks(hook_args) == 0
+    hook = (tmp_path / ".git" / "hooks" / "post-merge").read_text(encoding="utf-8")
+    assert r"\.(cs|lua|go|ts|tsx)$" in hook

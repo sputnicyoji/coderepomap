@@ -1,6 +1,6 @@
 ---
 name: repomap
-description: Generate a three-layered code map (L1 skeleton / L2 signatures / L3 reference graph) of a target codebase, tuned for AI coding agents. Use when the user asks to scan / index / summarize / map a code repository, build a project overview for Claude / Cursor / Copilot, refresh repomap, generate code map, surface cross-file references, dependency overview, or PageRank class importance. Chinese triggers: 生成 repomap / 更新代码地图 / 扫一下代码结构 / 建代码地图 / 给 AI 看 / 代码骨架 / 重要的类是哪几个 / 跨文件引用 / U3D 跨语言. Supports C# (Unity / U3D) and Lua (xLua / sLua / ToLua) and resolves Lua → C# cross-language calls.
+description: Generate a three-layered code map (L1 skeleton / L2 signatures / L3 reference graph) of a target codebase, tuned for AI coding agents. Use when the user asks to scan / index / summarize / map a code repository, build a project overview for Claude / Cursor / Copilot, refresh repomap, generate code map, surface cross-file references, dependency overview, or PageRank class importance. Chinese triggers: 生成 repomap / 更新代码地图 / 扫一下代码结构 / 建代码地图 / 给 AI 看 / 代码骨架 / 重要的类是哪几个 / 跨文件引用 / U3D 跨语言. Supports C# (Unity / U3D), Lua (xLua / sLua / ToLua), Go, and TypeScript/TSX; resolves Lua → C# cross-language calls.
 ---
 
 # repomap
@@ -14,6 +14,7 @@ The user wants to:
 - generate / refresh / update the repo map for the current project
 - give an AI agent a layered overview of a codebase
 - scan a Unity / C# / Lua project for class / method / reference structure
+- map a Go module or a TypeScript/Node project (ESM `.js`-suffix imports resolve to `.ts` sources)
 - get a cross-language graph for U3D mixed C# + Lua (xLua / sLua / ToLua)
 - audit which classes / functions PageRank surfaces as central
 
@@ -44,7 +45,10 @@ Default output directory: `.repomap/output/`. Per-config override possible.
    ```bash
    pip install --user coderepomap[csharp]                  # C# only
    pip install --user coderepomap[lua]                     # Lua only
+   pip install --user coderepomap[go]                      # Go only
+   pip install --user coderepomap[typescript]              # TypeScript / TSX only
    pip install --user coderepomap[csharp,lua,tiktoken]     # U3D mixed + precise tokens
+   pip install --user coderepomap[all]                     # everything
    ```
 
    Pre-PyPI install from a local wheel (DEV ONLY — replace with the actual
@@ -94,6 +98,8 @@ Recommended probes:
 - **Glob tool** (preferred when running inside Claude Code):
   - `Glob "**/*.cs"` — limit head to first ~5 results
   - `Glob "**/*.lua"` — first ~5
+  - `Glob "**/*.go"` and check for `go.mod` (Go sentinel)
+  - `Glob "**/*.ts"` / `Glob "**/*.tsx"` and check for `tsconfig.json` / `package.json` (TypeScript sentinel)
   - `Glob "**/*.csproj"` and `Glob "**/*.sln"`
   - `Read` `ProjectSettings/ProjectVersion.txt` if it exists (Unity sentinel)
   - `Read` `.repomap/config.yaml` and any project-specific config you spot
@@ -105,7 +111,11 @@ Recommended probes:
   find . -maxdepth 6 -name "*.csproj" -o -name "*.sln" 2>/dev/null | head -5
   find . -maxdepth 6 -name "*.cs"  2>/dev/null | head -5
   find . -maxdepth 6 -name "*.lua" 2>/dev/null | head -5
+  find . -maxdepth 6 -name "*.go"  2>/dev/null | head -5
+  find . -maxdepth 6 \( -name "*.ts" -o -name "*.tsx" \) -not -path "*/node_modules/*" 2>/dev/null | head -5
   test -f ProjectSettings/ProjectVersion.txt && echo "unity"
+  test -f go.mod && echo "go-module"
+  test -f tsconfig.json && echo "typescript"
   find . -maxdepth 4 -name "config.yaml" -path "*repomap*" 2>/dev/null
   ```
 
@@ -116,15 +126,18 @@ Classify based on what files actually exist anywhere under the target root:
 | `.cs` present + Unity sentinel (`ProjectSettings/ProjectVersion.txt`) + NO `.lua` | `--lang csharp --preset unity` |
 | `.cs` present, no Unity sentinel, no `.lua` | `--lang csharp` (generic preset) |
 | `.lua` present, no `.cs` | `--lang lua` |
+| `.go` present (usually with `go.mod`) | `--lang go` |
+| `.ts` / `.tsx` present (usually with `tsconfig.json`; ignore `node_modules/`) | `--lang typescript` — then edit `source.root_path` to the real source root (commonly `src`) |
 | **Both `.cs` AND `.lua` present** (Unity or not — server + scripts, embedded Lua, anything) | multi-lang config (write manually, see Step 2b) |
-| Neither | bail with `"No C#/Lua sources detected at <target>. Specify --lang or initialize manually."` |
+| Multiple unrelated languages present | ask the user which one (or write a multi-lang config) |
+| None of the above | bail with `"No C#/Lua/Go/TypeScript sources detected at <target>. Specify --lang or initialize manually."` |
 
 ### Step 2 — Initialize config (only if `.repomap/config.yaml` doesn't already exist)
 
 #### 2a — Single language (init via CLI)
 
 ```bash
-python -m coderepomap init --lang csharp --preset unity        # or other combos
+python -m coderepomap init --lang csharp --preset unity        # or --lang lua / go / typescript
 ```
 
 This writes `.repomap/config.yaml` from the bundled template.
@@ -313,7 +326,7 @@ Repomap generated for <project_name>:
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `No parser plug-in for lang 'csharp'` | extras not installed | `pip install --user coderepomap[csharp]` |
+| `No parser plug-in for lang '<lang>'` | extras not installed | `pip install --user coderepomap[<lang>]` (csharp / lua / go / typescript) |
 | `config has both lang and langs` | hand-edited config has both keys | Pick one; `langs:` wins if you want multi-lang |
 | `No configuration found at ...` | `.repomap/config.yaml` missing | Run Step 2 (`init` or write manually) |
 | `Source root for lang=... not found` | `source.root_path` wrong | Edit config; verify with `ls <root>` |

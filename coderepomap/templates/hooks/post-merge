@@ -2,8 +2,13 @@
 # RepoMap auto-update hook (post-merge)
 # This hook runs after git pull/merge
 
-# Check if repomap is available
-if ! command -v repomap >/dev/null 2>&1; then
+# Resolve the repomap launcher: PATH first, then the interpreter that
+# installed this hook (virtualenv installs are not on the hook's PATH).
+if command -v repomap >/dev/null 2>&1; then
+    REPOMAP="repomap"
+elif [ -x "__REPOMAP_PYTHON__" ]; then
+    REPOMAP="__REPOMAP_PYTHON__ -m coderepomap"
+else
     exit 0
 fi
 
@@ -12,10 +17,10 @@ if [ ! -d ".repomap" ]; then
     exit 0
 fi
 
-# Check if any C# files changed
-CHANGED=$(git diff --name-only HEAD@{1} HEAD 2>/dev/null | grep -E "\.cs$" | head -1)
+# Check if any source files of the configured language(s) changed
+CHANGED=$(git diff --name-only HEAD@{1} HEAD 2>/dev/null | grep -E "__REPOMAP_EXT_PATTERN__" | head -1)
 
 if [ -n "$CHANGED" ]; then
-    echo "[RepoMap] C# files changed, updating repo map..."
-    repomap generate --notify
+    echo "[RepoMap] Source files changed, updating repo map..."
+    $REPOMAP generate --notify
 fi

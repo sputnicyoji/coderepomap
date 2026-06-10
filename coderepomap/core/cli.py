@@ -409,12 +409,54 @@ def cmd_hooks(args):
         return _install_hooks(project_root, hooks_dir, args.with_notify)
 
 
+def _hook_ext_pattern(project_root: Path) -> str:
+    """grep -E pattern for the project's configured language extensions.
+
+    Reads `.repomap/config.yaml` to find the active lang(s) and asks each
+    registered parser for its `file_extensions`, so a TypeScript project's
+    hooks trigger on `.ts` changes instead of the historical hardcoded
+    `.cs`. Falls back to the union of all built-in languages when the
+    config or a parser is unavailable — an over-eager hook only costs one
+    cheap regenerate, while an under-eager one silently goes stale.
+    """
+    fallback = r"\.(cs|lua|go|ts|tsx)$"
+    try:
+        config_path = project_root / '.repomap' / 'config.yaml'
+        if not config_path.exists():
+            # Uninitialized project: watch every built-in language. (A legacy
+            # config that EXISTS but declares no lang still means C# below.)
+            return fallback
+        config = RepoMapGenerator.load_config(config_path)
+        if 'langs' in config:
+            langs = list(config.get('langs') or [])
+        elif config.get('lang'):
+            langs = [config['lang']]
+        else:
+            langs = ['csharp']  # legacy configs without lang/langs
+        from .registry import get_parser
+        exts = []
+        for lang in langs:
+            for ext in get_parser(lang).file_extensions:
+                exts.append(ext.lstrip('.'))
+        if not exts:
+            return fallback
+        return r"\.(" + "|".join(dict.fromkeys(exts)) + r")$"
+    except Exception:
+        return fallback
+
+
 def _install_hooks(project_root: Path, hooks_dir: Path, with_notify: bool = True) -> int:
     """Install Git hooks"""
     templates_dir = get_templates_dir() / 'hooks'
 
     # Hook names to install
     hook_names = ['post-merge', 'post-checkout']
+
+    # Bake install-time values into the templates: the language extension
+    # filter and the absolute interpreter (forward slashes so the path also
+    # works under Git Bash on Windows) as a PATH fallback for venv installs.
+    ext_pattern = _hook_ext_pattern(project_root)
+    python_exe = Path(sys.executable).as_posix()
 
     for hook_name in hook_names:
         hook_path = hooks_dir / hook_name
@@ -425,6 +467,9 @@ def _install_hooks(project_root: Path, hooks_dir: Path, with_notify: bool = True
         else:
             # Generate default hook content
             content = _generate_hook_content(hook_name, with_notify)
+
+        content = content.replace('__REPOMAP_EXT_PATTERN__', ext_pattern)
+        content = content.replace('__REPOMAP_PYTHON__', python_exe)
 
         # Check for existing hook
         if hook_path.exists():
