@@ -61,38 +61,36 @@ def _largest_fitting(candidates, fits):
     return candidates[best]
 
 
-def _fits_budget(max_tokens: int, encoding: str):
-    return lambda kept: count_tokens("\n".join(kept), encoding) <= max_tokens
+def _trim(candidates, build, max_tokens: int, encoding: str) -> str:
+    """Text of `build(k)` for the largest candidate `k` that fits the budget.
+
+    The last candidate keeps everything, so an output already under budget
+    comes back whole without a separate full-text check.
+    """
+    keep = _largest_fitting(
+        candidates, lambda k: count_tokens("\n".join(build(k)), encoding) <= max_tokens
+    )
+    return "\n".join(build(keep))
 
 
 def _trim_l1(lines: List[str], max_tokens: int, encoding: str) -> str:
     """Drop rows just above the closing line, keeping at least 10 lines."""
-    output = "\n".join(lines)
-    if len(lines) <= 10 or count_tokens(output, encoding) <= max_tokens:
-        return output
-    fits = _fits_budget(max_tokens, encoding)
-    last = lines[-1]
-    keep = _largest_fitting(range(9, len(lines) - 1), lambda k: fits(lines[:k] + [last]))
-    return "\n".join(lines[:keep] + [last])
+    if len(lines) <= 10:
+        return "\n".join(lines)
+    return _trim(range(9, len(lines)), lambda k: lines[:k] + lines[-1:], max_tokens, encoding)
 
 
 def _trim_l2(lines: List[str], max_tokens: int, encoding: str) -> str:
     """Drop whole trailing blocks; every cut lands just before a "##" header."""
-    output = "\n".join(lines)
-    if not lines or count_tokens(output, encoding) <= max_tokens:
-        return output
-    fits = _fits_budget(max_tokens, encoding)
-    cuts = [0] + [i for i, line in enumerate(lines) if line.startswith("##")]
-    return "\n".join(lines[:_largest_fitting(cuts, lambda k: fits(lines[:k]))])
+    cuts = [0] + [i for i, line in enumerate(lines) if line.startswith("##")] + [len(lines)]
+    return _trim(cuts, lambda k: lines[:k], max_tokens, encoding)
 
 
 def _trim_l3(lines: List[str], max_tokens: int, encoding: str) -> str:
     """Drop lines from the end, keeping at least 5."""
-    output = "\n".join(lines)
-    if len(lines) <= 5 or count_tokens(output, encoding) <= max_tokens:
-        return output
-    fits = _fits_budget(max_tokens, encoding)
-    return "\n".join(lines[:_largest_fitting(range(5, len(lines)), lambda k: fits(lines[:k]))])
+    if len(lines) <= 5:
+        return "\n".join(lines)
+    return _trim(range(5, len(lines) + 1), lambda k: lines[:k], max_tokens, encoding)
 
 
 def _module_from_file(file_path: str) -> str:

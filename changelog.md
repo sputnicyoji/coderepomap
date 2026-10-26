@@ -5,10 +5,9 @@ All notable changes to `coderepomap` are documented here. Format based on
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 Installs come from a git URL and pip skips the reinstall when the version is
-unchanged, so every push that changes behaviour needs a version bump in both
-`pyproject.toml` and `coderepomap/__init__.py`; otherwise `pip install -U`
-leaves existing installs on the old code. `tests/test_cli.py` checks the two
-agree.
+unchanged, so every push that changes behaviour needs a bump of `__version__`
+in `coderepomap/__init__.py` (pyproject.toml reads it); otherwise
+`pip install -U` leaves existing installs on the old code.
 
 ## [Unreleased]
 

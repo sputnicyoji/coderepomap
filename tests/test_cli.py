@@ -48,23 +48,6 @@ def test_version_string():
     assert __version__ in output, f"Expected {__version__!r} in version output: {output!r}"
 
 
-def test_version_matches_pyproject():
-    """__version__ and pyproject.toml must agree.
-
-    Installs come from a git URL, and pip skips a reinstall when the version
-    is unchanged, so `pip install -U` only picks up a release whose version
-    was bumped in pyproject.toml -- the one pip reads.
-    """
-    import re
-
-    from coderepomap import __version__
-
-    pyproject = (Path(__file__).resolve().parents[1] / 'pyproject.toml').read_text(encoding='utf-8')
-    match = re.search(r'^version\s*=\s*"([^"]+)"', pyproject, re.MULTILINE)
-    assert match, "no version line in pyproject.toml"
-    assert match.group(1) == __version__, f"pyproject.toml says {match.group(1)}, __version__ says {__version__}"
-
-
 def test_help_no_csharp_only_wording():
     """CLI --help must mention 'multi-language', not 'C# projects' only."""
     result = subprocess.run(

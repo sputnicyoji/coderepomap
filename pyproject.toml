@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "coderepomap"
-version = "0.2.1"
+dynamic = ["version"]
 description = "Generate layered multi-language code maps optimized for AI assistants like Claude"
 readme = "README.md"
 license = {text = "MIT"}
@@ -68,6 +68,9 @@ repomap = "coderepomap.core.cli:main"
 Homepage = "https://github.com/user/coderepomap"
 Repository = "https://github.com/user/coderepomap"
 Issues = "https://github.com/user/coderepomap/issues"
+
+[tool.setuptools.dynamic]
+version = {attr = "coderepomap.__version__"}
 
 [tool.setuptools.packages.find]
 where = ["."]
