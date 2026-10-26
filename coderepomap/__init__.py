@@ -13,7 +13,7 @@ LanguageParser-compliant subclass (Symbol.id-aware). For the legacy v0.1.0
 parser shape, import `coderepomap.csharp.parser.LegacyCSharpParser` explicitly.
 """
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 __author__ = "Yoji"
 
 from .core.generator import RepoMapGenerator
