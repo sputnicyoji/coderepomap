@@ -40,6 +40,61 @@ def count_tokens(text: str, encoding: str = "cl100k_base") -> int:
     return len(text) // 4
 
 
+def _largest_fitting(candidates, fits):
+    """Largest value in ascending `candidates` for which `fits` holds, else the first.
+
+    Each renderer trims to its token budget by cutting `lines` back to one of a
+    set of prefix lengths. Trying those cuts one at a time from the top, as
+    v0.1.0 did, re-encodes the whole text once per dropped line: O(n^2)
+    tokenizer work, which took 400s+ on the L3 of a Go service with 150k
+    references. Binary search needs O(log n) encodes and returns the same cut
+    as the one-at-a-time loop as long as fewer lines never cost more tokens --
+    true for the len // 4 fallback, and for tiktoken on every corpus checked.
+    """
+    lo, hi, best = 0, len(candidates) - 1, 0
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if fits(candidates[mid]):
+            best, lo = mid, mid + 1
+        else:
+            hi = mid - 1
+    return candidates[best]
+
+
+def _fits_budget(max_tokens: int, encoding: str):
+    return lambda kept: count_tokens("\n".join(kept), encoding) <= max_tokens
+
+
+def _trim_l1(lines: List[str], max_tokens: int, encoding: str) -> str:
+    """Drop rows just above the closing line, keeping at least 10 lines."""
+    output = "\n".join(lines)
+    if len(lines) <= 10 or count_tokens(output, encoding) <= max_tokens:
+        return output
+    fits = _fits_budget(max_tokens, encoding)
+    last = lines[-1]
+    keep = _largest_fitting(range(9, len(lines) - 1), lambda k: fits(lines[:k] + [last]))
+    return "\n".join(lines[:keep] + [last])
+
+
+def _trim_l2(lines: List[str], max_tokens: int, encoding: str) -> str:
+    """Drop whole trailing blocks; every cut lands just before a "##" header."""
+    output = "\n".join(lines)
+    if not lines or count_tokens(output, encoding) <= max_tokens:
+        return output
+    fits = _fits_budget(max_tokens, encoding)
+    cuts = [0] + [i for i, line in enumerate(lines) if line.startswith("##")]
+    return "\n".join(lines[:_largest_fitting(cuts, lambda k: fits(lines[:k]))])
+
+
+def _trim_l3(lines: List[str], max_tokens: int, encoding: str) -> str:
+    """Drop lines from the end, keeping at least 5."""
+    output = "\n".join(lines)
+    if len(lines) <= 5 or count_tokens(output, encoding) <= max_tokens:
+        return output
+    fits = _fits_budget(max_tokens, encoding)
+    return "\n".join(lines[:_largest_fitting(range(5, len(lines)), lambda k: fits(lines[:k]))])
+
+
 def _module_from_file(file_path: str) -> str:
     """First path segment is the module name (matches v0.1.0 behavior).
 
@@ -256,11 +311,7 @@ def render_l1(
         module = file_str.split("/")[0] if file_str else "-"
         lines.append(f"| {module} | {label} | {method_str} |")
 
-    output = "\n".join(lines)
-    while count_tokens(output, encoding) > max_tokens and len(lines) > 10:
-        lines.pop(-2)
-        output = "\n".join(lines)
-    return output
+    return _trim_l1(lines, max_tokens, encoding)
 
 
 # ----- L2 -----------------------------------------------------------------------
@@ -352,14 +403,7 @@ def render_l2(
                 lines.append(f"- {m.signature}")
             lines.append("")
 
-    output = "\n".join(lines)
-    while count_tokens(output, encoding) > max_tokens and lines:
-        while lines and not lines[-1].startswith("##"):
-            lines.pop()
-        if lines:
-            lines.pop()
-        output = "\n".join(lines)
-    return output
+    return _trim_l2(lines, max_tokens, encoding)
 
 
 # ----- L3 -----------------------------------------------------------------------
@@ -445,11 +489,7 @@ def render_l3(
             lines.append(f"- {from_label} -> {target} ({ref.kind}){extra}")
         lines.append("")
 
-    output = "\n".join(lines)
-    while count_tokens(output, encoding) > max_tokens and len(lines) > 5:
-        lines.pop()
-        output = "\n".join(lines)
-    return output
+    return _trim_l3(lines, max_tokens, encoding)
 
 
 # ----- Meta ---------------------------------------------------------------------

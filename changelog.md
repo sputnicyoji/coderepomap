@@ -122,6 +122,15 @@ All notable changes to `coderepomap` are documented here. Format based on
 
 ### Fixed
 
+- **Token-budget trimming was O(n²)**: L1 / L2 / L3 shrank an over-budget
+  output one line (L2: one block) at a time and re-encoded the whole text
+  after every cut. On a Go service with 151k references the L3 trim alone
+  took 399s of a 907-file subset's run and never finished on the full tree;
+  the same subset now takes 3s and the full 7.6k-file tree 32s.
+  The cut is now found by binary search (`_largest_fitting` + `_trim_l1/2/3`),
+  O(log n) encodes, byte-identical output — checked against the old loops by
+  `tests/test_renderer_trim.py` and end-to-end on C#, C# + Lua, and Go repos.
+
 Code-review findings on the Go PR (15 top-severity + 4 cosmetic):
 
 - **Generic receiver methods** were silently dropped because receiver-type
